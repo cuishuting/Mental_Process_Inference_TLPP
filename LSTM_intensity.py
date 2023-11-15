@@ -4,6 +4,7 @@ import torch
 from generate_changing_weight_simple_find_intensity import Logic_Model_Generator
 from sklearn.utils import shuffle
 import matplotlib.pyplot as plt
+import os
 
 
 class LSTM_intensity(nn.Module):
@@ -19,7 +20,7 @@ class LSTM_intensity(nn.Module):
         self.lstm_cell = nn.LSTMCell(self.input_size, self.hidden_size)
         self.dense1 = nn.Linear(self.hidden_size, 5)
         self.dense2 = nn.Linear(5, 1)
-        self.ELU = nn.ELU()
+        self.Sigmoid = nn.Sigmoid()
 
 
     def forward(self, input_data): # input_data shape: [num_of_grids, batch_size, input_size(time_emb_size*2)]
@@ -30,7 +31,8 @@ class LSTM_intensity(nn.Module):
             h_t, c_t = self.lstm_cell(input_data[g_id], (h_t, c_t))
             tmp_intensity = self.dense1(h_t)
             tmp_intensity = self.dense2(tmp_intensity)
-            output_intensity = self.ELU(tmp_intensity)
+            # todo: ELU?
+            output_intensity = self.Sigmoid(tmp_intensity)
             mental_intensity_list.append(output_intensity)
         return torch.stack(mental_intensity_list)  # shape: [num_of_grids, batch_size, 1]
 
@@ -74,6 +76,10 @@ class Get_Data:
 
     def extend_org_data_dict(self):
         processed_data = np.zeros([self.num_sample, len(self.mental_predicates_set)+len(self.action_predicates_set), self.num_of_grids])
+        # print("####")
+        # print(self.org_data_dic)
+        # # print(len(self.org_data_dic))
+        # print("####")
         for idx, sample in enumerate(self.org_data_dic):
             for m_id in self.mental_predicates_set:
                 cur_mental_occur_time_list = self.org_data_dic[idx][m_id]['time']
@@ -140,8 +146,14 @@ sep = 0.5  # discrete small grids length
 mental_predicate_set = [0]
 action_predicate_set = [1]
 time_emb_size = 5
-data_generator = Logic_Model_Generator(time_tolerance, decay_rate, time_horizon, sep)
-org_train_data_dict, _, _ = data_generator.generate_data(num_sample, time_horizon)
+train_data_file_str = "./Synthetic_Data/org_train_data_dict"+ "_" + str(time_horizon) + "_" + str(num_sample)+ "_" + str(sep) +".npy"
+if os.path.exists(train_data_file_str):
+    org_train_data_dict = np.load(train_data_file_str, allow_pickle=True).item()
+    # print(org_train_data_dict)
+else:
+    data_generator = Logic_Model_Generator(time_tolerance, decay_rate, time_horizon, sep)
+    org_train_data_dict, _, _ = data_generator.generate_data(num_sample, time_horizon)
+    np.save(train_data_file_str, org_train_data_dict)
 
 get_train_data = Get_Data(num_sample, time_horizon, sep, mental_predicate_set, action_predicate_set, time_emb_size, org_train_data_dict)
 mask_mental_occur_train, transformed_input_train = get_train_data.get_LSTM_intensity_input()
@@ -173,8 +185,18 @@ for iter in range(num_iter):
 Generate testing data and  get model predicted mental intensity function
 """
 num_sample_test = batch_size
-test_data_generator = Logic_Model_Generator(time_tolerance, decay_rate, time_horizon, sep)
-org_test_data_dict, test_t_list_dict, test_ground_truth_intensity_list_dict = test_data_generator.generate_data(num_sample_test, time_horizon)
+test_data_file_str = "./Synthetic_Data/test_data_package" + "_" + str(time_horizon) + "_" + str(num_sample_test) + "_" + str(sep) +".npz"
+if os.path.exists(test_data_file_str):
+    test_data_package = np.load(test_data_file_str, allow_pickle=True)
+    org_test_data_dict = test_data_package["org_data_dict"].item()
+    test_t_list_dict = test_data_package["test_time_list_dict"].item()
+    test_ground_truth_intensity_list_dict = test_data_package["test_gs_intensity_list_dict"].item()
+else:
+    test_data_generator = Logic_Model_Generator(time_tolerance, decay_rate, time_horizon, sep)
+    org_test_data_dict, test_t_list_dict, test_ground_truth_intensity_list_dict = test_data_generator.generate_data(num_sample_test, time_horizon)
+    np.savez(test_data_file_str, org_data_dict=org_test_data_dict,
+             test_time_list_dict=test_t_list_dict,
+             test_gs_intensity_list_dict=test_ground_truth_intensity_list_dict)
 
 get_test_data = Get_Data(num_sample_test, time_horizon, sep, mental_predicate_set, action_predicate_set, time_emb_size, org_test_data_dict)
 mask_mental_occur_test, transformed_input_test = get_test_data.get_LSTM_intensity_input()
@@ -193,6 +215,7 @@ for t_id in range(num_sample_test):
     plt.plot(test_t_list_dict[t_id], test_ground_truth_intensity_list_dict[t_id], color='red', label='ground truth intensity')
     plt.show()
     # print(ground_truth_mental_intensity)
+    # todo: add mental occur point
     plt.plot(grids, pred_mental_intensity_list_test[:, t_id, :].reshape(-1).detach().numpy(), color='blue', label='predicted intensity')
     plt.xlabel('time')
     plt.ylabel('intensity')
