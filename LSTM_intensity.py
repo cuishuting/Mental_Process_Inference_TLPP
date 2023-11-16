@@ -18,40 +18,42 @@ class LSTM_intensity(nn.Module):
         self.time_horizon = time_horizon
 
         self.lstm_cell = nn.LSTMCell(self.input_size, self.hidden_size)
-        self.dense1 = nn.Linear(self.hidden_size, 5)
-        self.dense2 = nn.Linear(5, 1)
-        self.Sigmoid = nn.Sigmoid()
+        self.dense1 = nn.Linear(self.hidden_size * self.num_of_grids, 10 * self.num_of_grids)
+        self.dense2 = nn.Linear(10 * self.num_of_grids, 5 * self.num_of_grids)
+        self.dense3 = nn.Linear(5 * self.num_of_grids, self.num_of_grids)
+        self.sigmoid = nn.Sigmoid()
 
 
     def forward(self, input_data): # input_data shape: [num_of_grids, batch_size, input_size(time_emb_size*2)]
         h_t = torch.randn(self.batch_size, self.hidden_size)
         c_t = torch.randn(self.batch_size, self.hidden_size)
-        mental_intensity_list = [] # output of lstm
+        lstmcell_output_list = []
         for g_id in range(self.num_of_grids):
             h_t, c_t = self.lstm_cell(input_data[g_id], (h_t, c_t))
-            tmp_intensity = self.dense1(h_t)
-            tmp_intensity = self.dense2(tmp_intensity)
-            # todo: ELU?
-            output_intensity = self.Sigmoid(tmp_intensity)
-            mental_intensity_list.append(output_intensity)
-        return torch.stack(mental_intensity_list)  # shape: [num_of_grids, batch_size, 1]
+            lstmcell_output_list.append(h_t)
 
-    def obj_function(self, mental_intensity_list, b_id, mask_mental_occur):
+        output_all_grids = torch.cat(lstmcell_output_list, dim=1)
+        tmp_intensity = self.dense1(output_all_grids)
+        tmp_intensity = self.dense2(tmp_intensity)
+        tmp_intensity = self.dense3(tmp_intensity)
+        # todo: ELU?
+        output_intensity_all_grids = self.sigmoid(tmp_intensity) # shape: [batch_size, num_of_grids]
+        return output_intensity_all_grids
+
+    def obj_function(self, mental_intensity_list, mask_mental_occur):
         """
         obj func is log-likelihood of mental predicates based on intensity function learned from lstm_cell (regard action
         predicates' log-likelihood as constant)
         """
-        mask_mental_occur_cur_batch = mask_mental_occur[b_id*self.batch_size:(b_id+1)*self.batch_size, :]
-        mask_mental_occur = torch.transpose(mask_mental_occur_cur_batch, 0, 1).reshape(mental_intensity_list.shape)
-        occured_mental_intensity_list = mental_intensity_list * mask_mental_occur  # new shape: [num_of_grids, batch_size, 1]
-        occured_mental_intensity_list = torch.transpose(occured_mental_intensity_list, 0, 1) # [batch_size, num_of_grids, 1]
+        occured_mental_intensity_list = mental_intensity_list * mask_mental_occur  # shape: [batch_size, seq_len]
+        occured_mental_intensity_list = torch.transpose(occured_mental_intensity_list, 0, 1)  # new shape: [seq_len, batch_size]
         occur_grid_idx = torch.nonzero(occured_mental_intensity_list)
         log_likelihood = torch.tensor(0.0, requires_grad=True)
         # first part: sum of occurred mental intensity
         for b_id in range(self.batch_size):
-            cur_batch_occur_grids_list = occur_grid_idx[occur_grid_idx[:,0] == b_id][:, 1]
+            cur_batch_occur_grids_list = occur_grid_idx[occur_grid_idx[:, 1] == b_id][:, 0]
             for g_id in cur_batch_occur_grids_list:
-                log_likelihood = log_likelihood + occured_mental_intensity_list[b_id][g_id][0]
+                log_likelihood = log_likelihood + occured_mental_intensity_list[g_id][b_id]
         # second part: integral of intensity function for all batches
         squeezed_mental_intensity_list = mental_intensity_list.reshape(-1)
         for intensity in squeezed_mental_intensity_list:
@@ -171,9 +173,10 @@ for iter in range(num_iter):
     for b_id in range(int(num_sample/batch_size)):
         input_data = shuffled_input[b_id*batch_size:(b_id+1)*batch_size, :, :] # shape: [batch_size, num_of_grids, time_emb*2]
         input_data = torch.transpose(input_data, 0, 1)
-        # print(input_data.shape)
         pred_mental_intensity_list = model(input_data)
-        avg_neg_log_likelihood = model.obj_function(pred_mental_intensity_list, b_id, shuffled_mask)
+        mask_mental_occur_cur_batch = shuffled_mask[b_id * batch_size:(b_id + 1) * batch_size, :]
+        mask_mental_occur = torch.transpose(mask_mental_occur_cur_batch, 0, 1).reshape(pred_mental_intensity_list.shape)
+        avg_neg_log_likelihood = model.obj_function(pred_mental_intensity_list, mask_mental_occur)
         # backpropogation
         avg_neg_log_likelihood.backward()
         optimizer.step()
@@ -202,8 +205,10 @@ get_test_data = Get_Data(num_sample_test, time_horizon, sep, mental_predicate_se
 mask_mental_occur_test, transformed_input_test = get_test_data.get_LSTM_intensity_input()
 # transformed_input_test shape: [num_sample, num_of_grids, time_emb_size*2]
 test_input = torch.transpose(transformed_input_test, 0, 1)
-pred_mental_intensity_list_test = model(test_input) # shape: [num_of_grids, batch_size, 1]
-
+pred_mental_intensity_list_test = model(test_input) # shape: [batch_size, num_of_grids]
+print("########")
+print(pred_mental_intensity_list_test)
+print("########")
 """
 result visualization
 """
@@ -216,7 +221,7 @@ for t_id in range(num_sample_test):
     plt.show()
     # print(ground_truth_mental_intensity)
     # todo: add mental occur point
-    plt.plot(grids, pred_mental_intensity_list_test[:, t_id, :].reshape(-1).detach().numpy(), color='blue', label='predicted intensity')
+    plt.plot(grids, pred_mental_intensity_list_test[t_id, :].reshape(-1).detach().numpy(), color='blue', label='predicted intensity')
     plt.xlabel('time')
     plt.ylabel('intensity')
     plt.title('predicted intensity of mental event')
