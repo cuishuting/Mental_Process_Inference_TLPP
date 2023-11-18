@@ -189,6 +189,7 @@ class Logic_Model_Generator:
         data = {}
         t_list_dict = {}
         intensity_list_dict = {}
+        occur_t_list_dict = {}
         # NOTE: data = {0:{}, 1:{}, ...., num_sample:{}}
         for sample_ID in np.arange(0, num_sample, 1):
             # print('---------- Start generating the {}-th sample ----------'.format(sample_ID))
@@ -251,6 +252,7 @@ class Logic_Model_Generator:
                     break
             t_list_dict[sample_ID] = t_list
             intensity_list_dict[sample_ID] = intensity_list
+            occur_t_list_dict[sample_ID] = occur_t_list
             ##### plot ratio
             # print(t_list)
             # print(ratio_list)
@@ -265,7 +267,7 @@ class Logic_Model_Generator:
             # plt.legend(loc='best')
             # plt.savefig('intensity_mental')
 
-        return data, t_list_dict, intensity_list_dict
+        return data, t_list_dict, intensity_list_dict, occur_t_list_dict
     
 # if __name__ == "__main__":
 #     parser = argparse.ArgumentParser()
