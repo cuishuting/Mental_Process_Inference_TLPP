@@ -190,6 +190,9 @@ class Logic_Model_Generator:
         t_list_dict = {}
         intensity_list_dict = {}
         occur_t_list_dict = {}
+        ratio_list_dict = {}
+        occurred_m_ratio_list_dict = {}
+        occurred_m_intensity_list_dict = {}
         # NOTE: data = {0:{}, 1:{}, ...., num_sample:{}}
         for sample_ID in np.arange(0, num_sample, 1):
             # print('---------- Start generating the {}-th sample ----------'.format(sample_ID))
@@ -212,6 +215,8 @@ class Logic_Model_Generator:
             intensity_list = []
             occur_t_list = []
             occur_intensity_list = []
+            ratio_list = [] # we now consider ratio as ground truth hazard function in each grid
+            occurred_m_ratio_list = []
             while t < time_horizon:
                 grid = np.arange(t, time_horizon, self.sep)
                 intensity_potential = [self.intensity(cur_time, self.head_predicate_set[0], data[sample_ID]) for cur_time in grid]
@@ -225,7 +230,8 @@ class Logic_Model_Generator:
                 
                     # TODO: check whether keep min()
                     ratio = min(self.intensity(t, self.head_predicate_set[0], data[sample_ID]) / intensity_max, 1)
-                    
+                    ratio_list.append(ratio)
+                    # todo: ratio list as ground truth hazard rate?
                     ##########
                     t_list.append(t)
                     intensity_list.append(self.intensity(t, self.head_predicate_set[0], data[sample_ID]))
@@ -243,6 +249,7 @@ class Logic_Model_Generator:
                         idx = self.head_predicate_set[np.argmax(tmp)]
                         data[sample_ID][idx]['time'].append(t)
                         occur_t_list.append(t)
+                        occurred_m_ratio_list.append(ratio)
                         occur_intensity_list.append(self.intensity(t, self.head_predicate_set[0], data[sample_ID]))
 
                     else:
@@ -253,6 +260,9 @@ class Logic_Model_Generator:
             t_list_dict[sample_ID] = t_list
             intensity_list_dict[sample_ID] = intensity_list
             occur_t_list_dict[sample_ID] = occur_t_list
+            ratio_list_dict[sample_ID] = ratio_list
+            occurred_m_ratio_list_dict[sample_ID] = occurred_m_ratio_list
+            occurred_m_intensity_list_dict[sample_ID] = occur_intensity_list
             ##### plot ratio
             # print(t_list)
             # print(ratio_list)
@@ -267,7 +277,7 @@ class Logic_Model_Generator:
             # plt.legend(loc='best')
             # plt.savefig('intensity_mental')
 
-        return data, t_list_dict, intensity_list_dict, occur_t_list_dict
+        return data, t_list_dict, intensity_list_dict, occur_t_list_dict, ratio_list_dict, occurred_m_ratio_list_dict, occurred_m_intensity_list_dict
     
 # if __name__ == "__main__":
 #     parser = argparse.ArgumentParser()

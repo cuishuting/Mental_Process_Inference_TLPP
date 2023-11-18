@@ -16,7 +16,6 @@ class LSTM_intensity(nn.Module):
         self.batch_size = batch_size
         self.sep = torch.tensor(sep)
         self.time_horizon = time_horizon
-
         self.lstm_cell = nn.LSTMCell(self.input_size, self.hidden_size)
         self.dense1 = nn.Linear(self.hidden_size * self.num_of_grids, 10 * self.num_of_grids)
         self.dense2 = nn.Linear(10 * self.num_of_grids, 5 * self.num_of_grids)
@@ -25,21 +24,21 @@ class LSTM_intensity(nn.Module):
 
 
     def forward(self, input_data): # input_data shape: [num_of_grids, batch_size, input_size(time_emb_size*2)]
-        h_t = torch.randn(self.batch_size, self.hidden_size)
-        c_t = torch.randn(self.batch_size, self.hidden_size)
-        lstmcell_output_list = []
+        h_t = torch.randn(self.batch_size, self.hidden_size).cuda()
+        c_t = torch.randn(self.batch_size, self.hidden_size).cuda()
+        lstmcell_output_list = torch.zeros((self.num_of_grids, self.batch_size, self.hidden_size)).cuda()
         for g_id in range(self.num_of_grids):
             h_t, c_t = self.lstm_cell(input_data[g_id], (h_t, c_t))
-            lstmcell_output_list.append(h_t)
+            lstmcell_output_list[g_id] = h_t
 
-        output_all_grids = torch.cat(lstmcell_output_list, dim=1)
+        transpose_lstmcell_output = torch.transpose(lstmcell_output_list, 0, 1)
+        output_all_grids = transpose_lstmcell_output.reshape((self.batch_size, self.num_of_grids * self.hidden_size))
         tmp_intensity = self.dense1(output_all_grids)
         tmp_intensity = self.dense2(tmp_intensity)
         tmp_intensity = self.dense3(tmp_intensity)
         # todo: ELU?
         output_intensity_all_grids = self.sigmoid(tmp_intensity) # shape: [batch_size, num_of_grids]
         return output_intensity_all_grids
-
 
     def obj_function(self, mental_intensity_list, mask_mental_occur):
         """
@@ -49,12 +48,12 @@ class LSTM_intensity(nn.Module):
         occured_mental_intensity_list = mental_intensity_list * mask_mental_occur  # shape: [batch_size, seq_len]
         occured_mental_intensity_list = torch.transpose(occured_mental_intensity_list, 0, 1)  # new shape: [seq_len, batch_size]
         occur_grid_idx = torch.nonzero(occured_mental_intensity_list)
-        log_likelihood = torch.tensor(0.0, requires_grad=True)
+        log_likelihood = torch.tensor(0.0, requires_grad=True).cuda()
         # first part: sum of occurred mental intensity
         for b_id in range(self.batch_size):
             cur_batch_occur_grids_list = occur_grid_idx[occur_grid_idx[:, 1] == b_id][:, 0]
             for g_id in cur_batch_occur_grids_list:
-                log_likelihood = log_likelihood + occured_mental_intensity_list[g_id][b_id]
+                log_likelihood = log_likelihood + torch.log(occured_mental_intensity_list[g_id][b_id])
         # second part: integral of intensity function for all batches
         squeezed_mental_intensity_list = mental_intensity_list.reshape(-1)
         for intensity in squeezed_mental_intensity_list:
@@ -62,8 +61,6 @@ class LSTM_intensity(nn.Module):
         log_likelihood = log_likelihood / self.batch_size
         return (-1) * log_likelihood
 
-    def obj_func_hazard_func(self):
-        pass
 
 class Get_Data:
     """
@@ -131,7 +128,6 @@ class Get_Data:
                 input_lstm[sample_id][m_id] = torch.stack([self.time_embedding(processed_data[sample_id][m_id][g_id]) for g_id in range(self.num_of_grids)])
             for a_id in self.action_predicates_set:
                 input_lstm[sample_id][a_id] = torch.stack([self.time_embedding(processed_data[sample_id][a_id][g_id]) for g_id in range(self.num_of_grids)])
-
         # todo: for simplicity, only one mental predicate is considered
         mask_mental_occur = torch.tensor((processed_data[:, self.mental_predicates_set[0], :] > 0))
         # shape: [num_sample, num_of_grids], true if mental occurs in certain grid for each sample
@@ -150,7 +146,6 @@ class Get_Data:
         # input_lstm_for_hazard contains accumulated action time embedding in each mental survival window
         emb_for_time_0 = self.time_embedding(cur_time = 0) # for later accumulated action emb computation
         for sample_id in range(self.num_sample):
-            mental_survival_window[sample_id] = []
             cur_sample_mental_occur_grid_list = np.nonzero(extend_mental[sample_id])[0] # only consider one mental predicate's case here
             for win_id in range(len(cur_sample_mental_occur_grid_list)):
                 if win_id == 0:
@@ -159,7 +154,6 @@ class Get_Data:
                 else:
                     win_start_grid_idx = cur_sample_mental_occur_grid_list[win_id-1] + 1
                     win_end_grid_idx = cur_sample_mental_occur_grid_list[win_id]
-                mental_survival_window[sample_id].append([win_start_grid_idx, win_end_grid_idx])
                 for grid_idx in np.arange(win_start_grid_idx, win_end_grid_idx+1, 1):
                     for a_id in range(len(self.action_predicates_set)):
                         cur_time_emb = self.time_embedding(extend_action[sample_id][a_id][grid_idx])
@@ -175,29 +169,23 @@ class Get_Data:
                         else:
                             input_lstm_for_hazard[sample_id][a_id][grid_idx] = input_lstm_for_hazard[sample_id][a_id][grid_idx - 1]
 
-        return mental_survival_window, input_lstm_for_hazard
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        # todo: for current simple case, only one action predicate
+        final_input_lstm_for_h = input_lstm_for_hazard[:, 0, :, :]  # shape: [num_sample, num_grids, time_emb_size]
+        mask_mental_occur = torch.tensor((processed_data[:, self.mental_predicates_set[0], :] > 0))
+        # shape: [num_sample, num_of_grids], true if mental occurs in certain grid for each sample
+        return mask_mental_occur, final_input_lstm_for_h
 
 
 """
 Generate training data and train model LSTM_intensity
 """
+device = "cpu"
+if torch.cuda.is_available():
+    device = "cuda"
+print(f"Using {device} device")
 time_tolerance = 0
 decay_rate = 1
-time_horizon = 50
+time_horizon = 100  # todo: increase
 num_sample = 100
 sep = 0.05  # discrete small grids length
 mental_predicate_set = [0]
@@ -209,23 +197,28 @@ if os.path.exists(train_data_file_str):
     # print(org_train_data_dict)
 else:
     data_generator = Logic_Model_Generator(time_tolerance, decay_rate, time_horizon, sep)
-    org_train_data_dict, _, _, _ = data_generator.generate_data(num_sample, time_horizon)
+    org_train_data_dict, _, _, _, _, _, _ = data_generator.generate_data(num_sample, time_horizon)
     np.save(train_data_file_str, org_train_data_dict)
 
 get_train_data = Get_Data(num_sample, time_horizon, sep, mental_predicate_set, action_predicate_set, time_emb_size, org_train_data_dict)
 # mask_mental_occur_train, transformed_input_train = get_train_data.get_LSTM_intensity_input()
-mental_survival_window, input_lstm_for_hazard = get_train_data.get_LSTM_hazard_func_input()
+mask_mental_occur_train, transformed_input_train = get_train_data.get_LSTM_hazard_func_input()
+mask_mental_occur_train = mask_mental_occur_train.to(device)
+transformed_input_train = transformed_input_train.to(device)
 
 
 # mask_mental_occur_train shape: [num_sample, num_of_grids]
-# transformed_input_train shape: [num_sample, num_of_grids, time_emb_size*2]
+# transformed_input_train shape: [num_sample,num_of_grids,time_emb_size*2 or time_emb_size(pred intensity/hazard_func)]
+
 
 hidden_size = 20
 batch_size = 5
-model = LSTM_intensity(input_size=time_emb_size*2, hidden_size=hidden_size, num_of_grids=int(time_horizon / sep), batch_size=batch_size,
+model = LSTM_intensity(input_size=time_emb_size, hidden_size=hidden_size, num_of_grids=int(time_horizon / sep), batch_size=batch_size,
                        time_horizon=time_horizon, sep=sep)
+model = model.to(device)
 optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
-num_iter = 50
+num_iter = 500
+model.train()
 for iter in range(num_iter):
     shuffled_input, shuffled_mask = shuffle(transformed_input_train, mask_mental_occur_train, random_state=iter)
     for b_id in range(int(num_sample/batch_size)):
@@ -249,23 +242,34 @@ num_sample_test = batch_size
 test_data_file_str = "./Synthetic_Data/test_data_package" + "_" + str(time_horizon) + "_" + str(num_sample_test) + "_" + str(sep) +".npz"
 if os.path.exists(test_data_file_str):
     test_data_package = np.load(test_data_file_str, allow_pickle=True)
-    org_test_data_dict = test_data_package["org_data_dict"].item()
-    test_t_list_dict = test_data_package["test_time_list_dict"].item()
-    test_ground_truth_intensity_list_dict = test_data_package["test_gs_intensity_list_dict"].item()
-    test_occur_t_list_dict = test_data_package["test_occur_t_list_dict"].item()
+    org_test_data = test_data_package["org_data_dict"].item()
+    test_t_dict = test_data_package["test_time_list_dict"].item()
+    test_gs_intensity_dict = test_data_package["test_gs_intensity_list_dict"].item()
+    test_occur_t_dict = test_data_package["test_occur_t_list_dict"].item()
+    test_gs_hazard_func_dict = test_data_package["test_gs_hz_list_dict"].item()
+    test_occurred_mental_ratio_dict = test_data_package["test_occurred_mental_ratio_dict"].item()
+    test_occurred_mental_intensity_dict = test_data_package["test_occurred_mental_intensity_dict"].item()
+
 else:
     test_data_generator = Logic_Model_Generator(time_tolerance, decay_rate, time_horizon, sep)
-    org_test_data_dict, test_t_list_dict, test_ground_truth_intensity_list_dict, test_occur_t_list_dict = test_data_generator.generate_data(num_sample_test, time_horizon)
-    np.savez(test_data_file_str, org_data_dict=org_test_data_dict,
-             test_time_list_dict=test_t_list_dict,
-             test_gs_intensity_list_dict=test_ground_truth_intensity_list_dict,
-             test_occur_t_list_dict=test_occur_t_list_dict)
+    org_test_data, test_t_dict, test_gs_intensity_dict, test_occur_t_dict, test_gs_hazard_func_dict, test_occurred_mental_ratio_dict, test_occurred_mental_intensity_dict = test_data_generator.generate_data(num_sample_test, time_horizon)
+    np.savez(test_data_file_str, org_data_dict=org_test_data,
+             test_time_list_dict=test_t_dict,
+             test_gs_intensity_list_dict=test_gs_intensity_dict,
+             test_occur_t_list_dict=test_occur_t_dict,
+             test_gs_hz_list_dict=test_gs_hazard_func_dict,
+             test_occurred_mental_ratio_dict=test_occurred_mental_ratio_dict,
+             test_occurred_mental_intensity_dict=test_occurred_mental_intensity_dict)
 
-get_test_data = Get_Data(num_sample_test, time_horizon, sep, mental_predicate_set, action_predicate_set, time_emb_size, org_test_data_dict)
-mask_mental_occur_test, transformed_input_test = get_test_data.get_LSTM_intensity_input()
-# transformed_input_test shape: [num_sample, num_of_grids, time_emb_size*2]
+get_test_data = Get_Data(num_sample_test, time_horizon, sep, mental_predicate_set, action_predicate_set, time_emb_size, org_test_data)
+mask_mental_occur_test, transformed_input_test = get_test_data.get_LSTM_hazard_func_input()
+mask_mental_occur_test = mask_mental_occur_train.to(device)
+transformed_input_test = transformed_input_test.to(device)
+# transformed_input_test shape: [num_sample, num_of_grids, time_emb_size*2 or time_emb_size(pred intensity/hazard_func)]
 test_input = torch.transpose(transformed_input_test, 0, 1)
-pred_mental_intensity_list_test = model(test_input) # shape: [batch_size, num_of_grids]
+model.eval()
+with torch.no_grad():
+    pred_mental_hazard_list_test = model(test_input) # shape: [batch_size, num_of_grids]
 # print("########")
 # print(pred_mental_intensity_list_test)
 # print("########")
@@ -277,15 +281,24 @@ grids = np.arange(0, time_horizon, sep)[:int(time_horizon / sep)]
 
 for t_id in range(num_sample_test):
 
-    plt.plot(test_t_list_dict[t_id], test_ground_truth_intensity_list_dict[t_id], color='red', label='ground truth intensity')
-    plt.show()
-    # print(ground_truth_mental_intensity)
-    # todo: add mental occur point
-    plt.plot(grids, pred_mental_intensity_list_test[t_id, :].reshape(-1).detach().numpy(), color='blue', label='predicted intensity')
-    plt.scatter(test_occur_t_list_dict[t_id], np.zeros(len(test_occur_t_list_dict[t_id])), marker='o', color='red')
+    # 1. plot ground truth hazard function (currently ratio of keeping time_to_event)
+    plt.plot(test_t_dict[t_id], test_gs_hazard_func_dict[t_id], color='red', label='ground truth ratio')
+    # 2. plot ground truth conditional intensity function
+    plt.plot(test_t_dict[t_id], test_gs_intensity_dict[t_id], color='green', label='ground truth intensity')
+
+
+    # plot pred hazard func
+    plot_pred_mental_hazard_idx_list = [int(time/sep) for time in test_t_dict[t_id]]
+    plot_pred_mental_hazard_list = [pred_mental_hazard_list_test[t_id][g_id].item() for g_id in plot_pred_mental_hazard_idx_list]
+    plt.plot(test_t_dict[t_id], plot_pred_mental_hazard_list, color='blue', label='predicted intensity')
+
+    # plot observed mental occurrence point (ratio as ground truth)
+    plt.scatter(test_occur_t_dict[t_id], test_occurred_mental_ratio_dict[t_id], marker='o', color='red')
+    # plot observed mental occurrence point (conditional intensity as ground truth)
+    plt.scatter(test_occur_t_dict[t_id], test_occurred_mental_intensity_dict[t_id], marker='o', color='green')
     plt.xlabel('time')
-    plt.ylabel('intensity')
-    plt.title('predicted intensity of mental event')
+    plt.ylabel('hazard function')
+    plt.title('predicted hazard function of mental event')
     plt.show()
 
 
