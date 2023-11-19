@@ -173,9 +173,8 @@ class Logic_Model_Generator:
         return formula_effect
 
     def sample_poisson(self):
-        ##### NOTE: 假设 mental event发生的次数从[1, 2, 3, 4]之间sample
         lam = random.choice(np.array([2, 3, 4]))
-        num_events = np.array([random.choice(np.array([30, 31, 32, 33, 34, 35]))])
+        num_events = 80
         # print('num_events', num_events)
         events = self.time_horizon * np.random.exponential(1 / lam, size=num_events)
         events.sort()

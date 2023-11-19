@@ -17,27 +17,26 @@ class LSTM_intensity(nn.Module):
         self.sep = torch.tensor(sep)
         self.time_horizon = time_horizon
         self.lstm_cell = nn.LSTMCell(self.input_size, self.hidden_size)
-        self.dense1 = nn.Linear(self.hidden_size * self.num_of_grids, 10 * self.num_of_grids)
-        self.dense2 = nn.Linear(10 * self.num_of_grids, 5 * self.num_of_grids)
-        self.dense3 = nn.Linear(5 * self.num_of_grids, self.num_of_grids)
+        self.dense1 = nn.Linear(self.hidden_size, 10)
+        self.dense2 = nn.Linear(10, 5)
+        self.dense3 = nn.Linear(5, 1)
         self.sigmoid = nn.Sigmoid()
 
 
     def forward(self, input_data): # input_data shape: [num_of_grids, batch_size, input_size(time_emb_size*2)]
         h_t = torch.randn(self.batch_size, self.hidden_size).cuda()
         c_t = torch.randn(self.batch_size, self.hidden_size).cuda()
-        lstmcell_output_list = torch.zeros((self.num_of_grids, self.batch_size, self.hidden_size)).cuda()
+        # lstmcell_output_list = torch.zeros((self.num_of_grids, self.batch_size, self.hidden_size)).cuda()
+        output_intensity_all_grids = torch.zeros((self.batch_size, self.num_of_grids)).cuda()
         for g_id in range(self.num_of_grids):
             h_t, c_t = self.lstm_cell(input_data[g_id], (h_t, c_t))
-            lstmcell_output_list[g_id] = h_t
+            tmp_pred_t = self.dense1(h_t)
+            tmp_pred_t = self.dense2(tmp_pred_t)
+            tmp_pred_t = self.dense3(tmp_pred_t) # shape: [batch_size, 1]
+            final_pred_t = self.sigmoid(tmp_pred_t)
+            output_intensity_all_grids[:][g_id] = final_pred_t
+            # lstmcell_output_list[g_id] = h_t
 
-        transpose_lstmcell_output = torch.transpose(lstmcell_output_list, 0, 1)
-        output_all_grids = transpose_lstmcell_output.reshape((self.batch_size, self.num_of_grids * self.hidden_size))
-        tmp_intensity = self.dense1(output_all_grids)
-        tmp_intensity = self.dense2(tmp_intensity)
-        tmp_intensity = self.dense3(tmp_intensity)
-        # todo: ELU?
-        output_intensity_all_grids = self.sigmoid(tmp_intensity) # shape: [batch_size, num_of_grids]
         return output_intensity_all_grids
 
     def obj_function(self, mental_intensity_list, mask_mental_occur):
@@ -185,9 +184,9 @@ if torch.cuda.is_available():
 print(f"Using {device} device")
 time_tolerance = 0
 decay_rate = 1
-time_horizon = 100  # todo: increase
+time_horizon = 200 # todo: increase
 num_sample = 100
-sep = 0.05  # discrete small grids length
+sep = 0.1  # discrete small grids length
 mental_predicate_set = [0]
 action_predicate_set = [1]
 time_emb_size = 5
