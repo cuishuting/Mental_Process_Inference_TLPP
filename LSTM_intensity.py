@@ -26,15 +26,19 @@ class LSTM_intensity(nn.Module):
     def forward(self, input_data): # input_data shape: [num_of_grids, batch_size, input_size(time_emb_size*2)]
         h_t = torch.randn(self.batch_size, self.hidden_size).cuda()
         c_t = torch.randn(self.batch_size, self.hidden_size).cuda()
-        # lstmcell_output_list = torch.zeros((self.num_of_grids, self.batch_size, self.hidden_size)).cuda()
+        # h_t = torch.randn(self.batch_size, self.hidden_size)
+        # c_t = torch.randn(self.batch_size, self.hidden_size)
         output_intensity_all_grids = torch.zeros((self.batch_size, self.num_of_grids)).cuda()
+        # output_intensity_all_grids = torch.zeros((self.batch_size, self.num_of_grids))
+
         for g_id in range(self.num_of_grids):
             h_t, c_t = self.lstm_cell(input_data[g_id], (h_t, c_t))
             tmp_pred_t = self.dense1(h_t)
             tmp_pred_t = self.dense2(tmp_pred_t)
             tmp_pred_t = self.dense3(tmp_pred_t) # shape: [batch_size, 1]
             final_pred_t = self.sigmoid(tmp_pred_t)
-            output_intensity_all_grids[:][g_id] = final_pred_t
+            # print(final_pred_t.reshape(-1))
+            output_intensity_all_grids[:, g_id] = final_pred_t.reshape(-1)
             # lstmcell_output_list[g_id] = h_t
 
         return output_intensity_all_grids
@@ -184,9 +188,9 @@ if torch.cuda.is_available():
 print(f"Using {device} device")
 time_tolerance = 0
 decay_rate = 1
-time_horizon = 200 # todo: increase
+time_horizon = 50 # todo: increase
 num_sample = 100
-sep = 0.1  # discrete small grids length
+sep = 0.5  # discrete small grids length
 mental_predicate_set = [0]
 action_predicate_set = [1]
 time_emb_size = 5
