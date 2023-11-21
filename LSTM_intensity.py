@@ -1,7 +1,7 @@
 import numpy as np
 import torch.nn as nn
 import torch
-from generate_changing_weight_simple_find_intensity import Logic_Model_Generator
+from Data_simulation import Logic_Model_Generator
 from sklearn.utils import shuffle
 import matplotlib.pyplot as plt
 import os
@@ -186,22 +186,25 @@ device = "cpu"
 if torch.cuda.is_available():
     device = "cuda"
 print(f"Using {device} device")
-time_tolerance = 0
-decay_rate = 1
+time_tolerance = 0.1
+decay_rate = 0.8
 time_horizon = 50 # todo: increase
 num_sample = 100
-sep = 0.5  # discrete small grids length
+sep = 0.1  # discrete small grids length
 mental_predicate_set = [0]
-action_predicate_set = [1]
+action_predicate_set = [1, 2]
 time_emb_size = 5
 train_data_file_str = "./Synthetic_Data/org_train_data_dict"+ "_" + str(time_horizon) + "_" + str(num_sample)+ "_" + str(sep) +".npy"
 if os.path.exists(train_data_file_str):
     org_train_data_dict = np.load(train_data_file_str, allow_pickle=True).item()
     # print(org_train_data_dict)
 else:
-    data_generator = Logic_Model_Generator(time_tolerance, decay_rate, time_horizon, sep)
-    org_train_data_dict, _, _, _, _, _, _ = data_generator.generate_data(num_sample, time_horizon)
+    data_generator = Logic_Model_Generator(time_tolerance, decay_rate, sep)
+    org_train_data_dict = data_generator.generate_data(num_sample, time_horizon)
     np.save(train_data_file_str, org_train_data_dict)
+print("#######")
+print(org_train_data_dict)
+print("########")
 
 get_train_data = Get_Data(num_sample, time_horizon, sep, mental_predicate_set, action_predicate_set, time_emb_size, org_train_data_dict)
 # mask_mental_occur_train, transformed_input_train = get_train_data.get_LSTM_intensity_input()
@@ -242,29 +245,16 @@ for iter in range(num_iter):
 Generate testing data and  get model predicted mental intensity function
 """
 num_sample_test = batch_size
-test_data_file_str = "./Synthetic_Data/test_data_package" + "_" + str(time_horizon) + "_" + str(num_sample_test) + "_" + str(sep) +".npz"
+test_data_file_str = "./Synthetic_Data/test_data_dict" + "_" + str(time_horizon) + "_" + str(num_sample_test) + "_" + str(sep) +".npy"
 if os.path.exists(test_data_file_str):
-    test_data_package = np.load(test_data_file_str, allow_pickle=True)
-    org_test_data = test_data_package["org_data_dict"].item()
-    test_t_dict = test_data_package["test_time_list_dict"].item()
-    test_gs_intensity_dict = test_data_package["test_gs_intensity_list_dict"].item()
-    test_occur_t_dict = test_data_package["test_occur_t_list_dict"].item()
-    test_gs_hazard_func_dict = test_data_package["test_gs_hz_list_dict"].item()
-    test_occurred_mental_ratio_dict = test_data_package["test_occurred_mental_ratio_dict"].item()
-    test_occurred_mental_intensity_dict = test_data_package["test_occurred_mental_intensity_dict"].item()
+    test_data_dict = np.load(test_data_file_str, allow_pickle=True).item()
 
 else:
-    test_data_generator = Logic_Model_Generator(time_tolerance, decay_rate, time_horizon, sep)
-    org_test_data, test_t_dict, test_gs_intensity_dict, test_occur_t_dict, test_gs_hazard_func_dict, test_occurred_mental_ratio_dict, test_occurred_mental_intensity_dict = test_data_generator.generate_data(num_sample_test, time_horizon)
-    np.savez(test_data_file_str, org_data_dict=org_test_data,
-             test_time_list_dict=test_t_dict,
-             test_gs_intensity_list_dict=test_gs_intensity_dict,
-             test_occur_t_list_dict=test_occur_t_dict,
-             test_gs_hz_list_dict=test_gs_hazard_func_dict,
-             test_occurred_mental_ratio_dict=test_occurred_mental_ratio_dict,
-             test_occurred_mental_intensity_dict=test_occurred_mental_intensity_dict)
+    test_data_generator = Logic_Model_Generator(time_tolerance, decay_rate, sep)
+    test_data_dict = test_data_generator.generate_data(num_sample_test, time_horizon)
+    np.save(test_data_file_str, test_data_dict)
 
-get_test_data = Get_Data(num_sample_test, time_horizon, sep, mental_predicate_set, action_predicate_set, time_emb_size, org_test_data)
+get_test_data = Get_Data(num_sample_test, time_horizon, sep, mental_predicate_set, action_predicate_set, time_emb_size, test_data_dict)
 mask_mental_occur_test, transformed_input_test = get_test_data.get_LSTM_hazard_func_input()
 mask_mental_occur_test = mask_mental_occur_train.to(device)
 transformed_input_test = transformed_input_test.to(device)
@@ -282,6 +272,8 @@ result visualization
 grids = np.arange(0, time_horizon, sep)[:int(time_horizon / sep)]
 
 
+# todo: modify result visualization: only contains pred hazard function (x axis are ground-truth mental occur time)
+#  + scatter for ground-truth mental occurrence (y axis are corresponding pred hazard function)
 for t_id in range(num_sample_test):
 
     # 1. plot ground truth hazard function (currently ratio of keeping time_to_event)
