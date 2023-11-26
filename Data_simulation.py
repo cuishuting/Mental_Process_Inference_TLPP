@@ -234,4 +234,3 @@ class Logic_Model_Generator:
                     continue
 
         return data
-
