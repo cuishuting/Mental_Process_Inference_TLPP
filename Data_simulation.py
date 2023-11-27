@@ -229,8 +229,8 @@ class Logic_Model_Generator:
                                                          / np.sum(np.array(
                         [self.intensity(t, head_idx, data[sample_ID]) for head_idx in self.head_predicate_set])))
                     idx = np.argmax(tmp)
-                    data[sample_ID][idx]['time'].append(t)
+                    if t < time_horizon:
+                        data[sample_ID][idx]['time'].append(t)
                 else:
                     continue
-
         return data

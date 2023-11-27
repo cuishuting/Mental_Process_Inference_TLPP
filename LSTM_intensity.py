@@ -200,7 +200,7 @@ num_sample = 2000
 sep = 0.1  # discrete small grids length
 mental_predicate_set = [0]
 action_predicate_set = [1, 2]
-train_data_file_str = "./Synthetic_Data/org_train_data_dict"+ "_" + str(time_horizon) + "_" + str(num_sample)+ "_" + str(sep) +".npy"
+train_data_file_str = "./Synthetic_Data/org_train_data_dict" + "_" + str(time_horizon) + "_" + str(num_sample) + "_" + str(sep) +"debug.npy"
 if os.path.exists(train_data_file_str):
     org_train_data_dict = np.load(train_data_file_str, allow_pickle=True).item()
     # print(org_train_data_dict)
@@ -242,7 +242,7 @@ for iter in range(num_iter):
 Generate testing data and  get model predicted mental intensity function
 """
 num_sample_test = 5
-test_data_file_str = "./Synthetic_Data/test_data_dict" + "_" + str(time_horizon) + "_" + str(num_sample_test) + "_" + str(sep) +".npy"
+test_data_file_str = "./Synthetic_Data/test_data_dict" + "_" + str(time_horizon) + "_" + str(num_sample_test) + "_" + str(sep) +"debug.npy"
 if os.path.exists(test_data_file_str):
     test_data_dict = np.load(test_data_file_str, allow_pickle=True).item()
 
