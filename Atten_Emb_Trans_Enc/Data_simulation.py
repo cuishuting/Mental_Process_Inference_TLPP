@@ -19,7 +19,7 @@ class Logic_Model_Generator:
         self.action_predicate_set = [1, 2]
         self.head_predicate_set = [0, 1, 2]  # the index set of all head predicates
         self.decay_rate = decay_rate # decay kernel
-        self.sep = sep
+        self.sep = sep  # this sep determines the accuracy of intensity_max when sampling predicates
 
         ### the following parameters are used to generate synthetic data
         ### for the learning part, the following is used to claim variables
@@ -234,3 +234,5 @@ class Logic_Model_Generator:
                 else:
                     continue
         return data
+
+
