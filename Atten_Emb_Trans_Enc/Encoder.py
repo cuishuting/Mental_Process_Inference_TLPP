@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 import math
 
+
 class Encoder(nn.Module):
     def __init__(self, d_emb, num_action_types):
         super().__init__()

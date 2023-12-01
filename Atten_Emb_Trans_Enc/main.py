@@ -4,6 +4,9 @@ import argparse
 import torch
 import os
 from GetDataloader import get_dataloader
+from InputEmbLayer import InputEmbLayer
+
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument('-action_type_list', type=list, nargs='+')
@@ -14,6 +17,7 @@ parser.add_argument('-time_horizon', type=int)
 parser.add_argument('-num_sample', type=int)
 parser.add_argument('-sep_for_grids', type=float)
 parser.add_argument('-sep_for_data_syn', type=float)
+parser.add_argument('-d_emb', type=int)
 parser.add_argument('-batch_size', type=int)
 parser.add_argument('-lr', type=float)
 parser.add_argument('-num_iter', type=int)
@@ -23,6 +27,7 @@ param = parser.parse_args()
 param.device = torch.device('cuda')
 action_type_list = list(map(int, param.action_type_list[0]))  # cur: [1, 2]
 mental_type_list = list(map(int, param.mental_type_list[0]))  # cur: [0]
+
 
 """
 Generate org_train_dict data, data has form: org_train_data_dict[sample_ID][predicate_idx]['time'] = [...]
@@ -50,12 +55,15 @@ else:
 
 train_dataloader = get_dataloader(org_train_data_dict, action_type_list, mental_type_list, param.batch_size)
 
-for id, (a_pad_batch, m_pad_batch) in enumerate(train_dataloader):
+for id, (a_pad_batch, m_pad_batch, real_a_time_num, real_m_time_num) in enumerate(train_dataloader):
     if id == 0:
-        print(a_pad_batch[1].shape)
-        print(a_pad_batch[2].shape)
-        print(m_pad_batch[0].shape)
-        print(a_pad_batch)
-        print(m_pad_batch)
-
+        model = InputEmbLayer(a_type_list=action_type_list,
+                              m_type_list=mental_type_list,
+                              d_emb=param.d_emb,
+                              batch_size=param.batch_size,
+                              time_horizon=param.time_horizon,
+                              sep_for_grids=param.sep_for_grids,
+                              real_a_seq_len=real_a_time_num,
+                              real_m_seq_len=real_m_time_num)
+        model((a_pad_batch, m_pad_batch))
 

@@ -37,16 +37,25 @@ def collate_fn(batch_samples, a_type_list, m_type_list):
     max_m_seq_len = max(len(m_org_seq) for m_org_seq in all_m_org_seq)
     pad_a_seq = {}
     pad_m_seq = {}
+    # todo: store each real occured time seq length for each action and mental predicate in each batch
+    real_a_time_num = {}
+    real_m_time_num = {}
     for a_type in a_type_list:
         pad_a_seq[a_type] = torch.tensor([a[a_type] + [0]*(max_a_seq_len - len(a[a_type])) for a in org_a_batch])
+        real_a_time_num[a_type] = torch.tensor([len(a[a_type]) for a in org_a_batch])
     for m_type in m_type_list:
         pad_m_seq[m_type] = torch.tensor([m[m_type] + [0] * (max_m_seq_len - len(m[m_type])) for m in org_m_batch])
-    return pad_a_seq, pad_m_seq
+        real_m_time_num[m_type] = torch.tensor([len(m[m_type]) for m in org_m_batch])
+    return pad_a_seq, pad_m_seq, real_a_time_num, real_m_time_num
 
 
 def get_dataloader(data, action_type_list, mental_type_list, batch_size):
     dataset = SynDataset(data, action_type_list, mental_type_list)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=partial(collate_fn, a_type_list=action_type_list, m_type_list=mental_type_list), num_workers=2)
+    dataloader = DataLoader(dataset,
+                            batch_size=batch_size,
+                            shuffle=True,
+                            collate_fn=partial(collate_fn, a_type_list=action_type_list, m_type_list=mental_type_list),
+                            num_workers=2)
     return dataloader
 
 
