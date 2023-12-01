@@ -31,19 +31,6 @@ def get_q_all_grids(time_horizon, sep_for_grids, d_emb):
     return q_all_grids  # shape: [num_grids, d_emb]
 
 
-def get_attn_weights_mask(org_attn_weights):
-    """
-    input org_attn_weights: shape [batch_size, num_action_types * max_seq_len, num_grids]
-    """
-    attn_w_pad_or_not = ~(org_attn_weights == 0)
-    batch_size = org_attn_weights.shape[0]
-    all_a_pad_seqs_len = org_attn_weights.shape[1]
-    num_grids = org_attn_weights.shape[2]
-    for b_id in range(batch_size):
-        attn_w_pad_or_not[b_id] = torch.tensor([attn_w_pad_or_not[b_id, i, :].any() for i in range(all_a_pad_seqs_len)]).unsqueeze(-1).expand(all_a_pad_seqs_len, num_grids)
-    return attn_w_pad_or_not
-
-
 class InputEmbLayer(nn.Module):
     def __init__(self, a_type_list, m_type_list, d_emb, batch_size, time_horizon, sep_for_grids, real_a_seq_len, real_m_seq_len):
         super().__init__()

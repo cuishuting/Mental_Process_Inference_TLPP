@@ -6,6 +6,7 @@ import os
 from GetDataloader import get_dataloader
 from InputEmbLayer import InputEmbLayer
 
+# todo: def an extra func to "get mental_occur_grids_list" to cal obj_func for encoder
 
 parser = argparse.ArgumentParser()
 
@@ -65,5 +66,8 @@ for id, (a_pad_batch, m_pad_batch, real_a_time_num, real_m_time_num) in enumerat
                               sep_for_grids=param.sep_for_grids,
                               real_a_seq_len=real_a_time_num,
                               real_m_seq_len=real_m_time_num)
-        model((a_pad_batch, m_pad_batch))
+        input_all_grids = model((a_pad_batch, m_pad_batch))
+        print("********")
+        print(m_pad_batch)  # dict with padded time seq, like: {0: torch.tensor([[1,3,0], [4,0,0], [3,4,5]])}
+        print("********")
 
