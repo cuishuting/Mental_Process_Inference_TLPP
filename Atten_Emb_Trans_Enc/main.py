@@ -35,16 +35,18 @@ def train_epoch(model, train_dataloader, param, action_type_list, mental_type_li
         optimizer.zero_grad()
 
 
-def eval_epoch(model, test_dataloader, param, mental_type_list):
+def eval_epoch(model, test_dataloader, param, mental_type_list, action_type_list):
     model.eval()
 
     grids = np.arange(0, param.time_horizon, param.sep_for_grids)
     with torch.no_grad():
         for id, (a_pad_batch, m_pad_batch, real_a_time_num, real_m_time_num) in enumerate(test_dataloader):
-            a_pad_batch = a_pad_batch.to(param.device)
-            m_pad_batch = m_pad_batch.to(param.device)
-            real_a_time_num = real_a_time_num.to(param.device)
-            real_m_time_num = real_m_time_num.to(param.device)
+            for a in action_type_list:
+                a_pad_batch[a] = a_pad_batch[a].to(param.device)
+                real_a_time_num[a] = real_a_time_num[a].to(param.device)
+            for m in mental_type_list:
+                m_pad_batch[m] = m_pad_batch[m].to(param.device)
+                real_m_time_num[m] = real_m_time_num[m].to(param.device)
             pred_hz = model((a_pad_batch, m_pad_batch), real_a_time_num)  # [batch_size, num_grids, 1]
             mental_occur_grids_list_test, org_time_dict = get_m_occur_grids_list(m_pad_batch, param.time_horizon, param.sep_for_grids,
                                                              mental_type_list, real_m_time_num, param.batch_size)
@@ -63,11 +65,11 @@ def eval_epoch(model, test_dataloader, param, mental_type_list):
                     if cur_mental_oc_gr_list[g_id]:
                         scatter_pred_hz_list.append(cur_pred_hz[g_id])
                 # todo: for current simple case, only one mental predicate with index 0
-                plt.scatter(org_time_dict[0][t_id], scatter_pred_hz_list, marker='o', color='red')
+                plt.scatter(org_time_dict[0][t_id].cpu(), scatter_pred_hz_list, marker='o', color='red')
                 plt.xlabel('grids')
                 plt.ylabel('hazard function')
                 plt.title('predicted hazard function of mental event with sep_for_grids: ' + str(param.sep_for_grids) + " train samples: " + str(param.num_sample))
-                plt.savefig("./result_visual/result_" + str(t_id) + "_" + str(param.num_sample) + "_trans_encoder.png")
+                plt.savefig("./result_visual/result_" + str(t_id) + "_" + str(param.num_iter) + "_trans_encoder.png")
                 plt.close()
 
 
@@ -143,7 +145,7 @@ for epoch in range(param.num_iter):
     train_epoch(encoder_for_hz, train_dataloader, param, action_type_list, mental_type_list, optimizer)
     scheduler.step()
 """Val encoder"""
-eval_epoch(encoder_for_hz, test_dataloader, param, mental_type_list)
+eval_epoch(encoder_for_hz, test_dataloader, param, mental_type_list, action_type_list)
 
 
 
