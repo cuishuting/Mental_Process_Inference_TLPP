@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 import math
+from InputEmbLayer import InputEmbLayer
 
 
 class ScaledDotProductAttention(nn.Module):
@@ -24,13 +25,18 @@ class ScaledDotProductAttention(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, d_emb, d_k, d_v, d_hid, dropout):
+    def __init__(self, d_emb, d_k, d_v, d_hid, dropout, a_type_list, batch_size, time_horizon, sep_for_grids, device):
         super().__init__()
         self.d_emb = d_emb  # d_emb is encoding dim for each action event (for both temporal and type encoding)
         self.d_k = d_k  # d_q_emb == d_k_emb == d_k
         self.d_v = d_v
         self.d_hid = d_hid
+        self.device = device
+        self.batch_size = batch_size
+        self.num_of_grids = int(time_horizon / sep_for_grids)
         # self.normalize_before = normalize_before  ???
+        # todo: change param of inputemb layer
+        self.input_layer = InputEmbLayer(a_type_list, self.d_emb, self.batch_size, time_horizon, sep_for_grids, self.device)
         self.w_q = nn.Linear(self.d_emb, self.d_k, bias=False)
         self.w_k = nn.Linear(self.d_emb, self.d_k, bias=False)
         self.w_v = nn.Linear(self.d_emb, self.d_v, bias=False)
@@ -45,10 +51,11 @@ class Encoder(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, input_all_grids):
+    def forward(self, data, real_a_seq_len):
         """
-        input_all_grids: shape [batch_size, num_grids, d_emb]
+        data, tuple, with data[0]: padded action seq batch, data[1]: padded mental seq batch
         """
+        input_all_grids = self.input_layer(data, real_a_seq_len).to(self.device)  # input_all_grids: shape [batch_size, num_grids, d_emb]
         q = self.w_q(input_all_grids)  # shape: [batch_size, num_grids, d_k]
         k = self.w_k(input_all_grids)  # shape: [batch_size, num_grids, d_k]
         v = self.w_v(input_all_grids)  # shape: [batch_size, num_grids, d_v]

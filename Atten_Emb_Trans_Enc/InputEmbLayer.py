@@ -3,15 +3,15 @@ import torch
 import math
 
 
-def get_time_emb(data, d_emb):
+def get_time_emb(data, d_emb, device):
     """
     return time encoding for each event's time stamp, which will not be included in autograd;
     data shape: [batch_size, max_seq_len_cur_batch]
     d_emb is the dimension of both time and type encoding
     """
-    pad_mask = ~data.eq(0)  # True-False tensor with shape [batch_size, max_len_cur_batch],
+    pad_mask = ~data.eq(0).to(device)  # True-False tensor with shape [batch_size, max_len_cur_batch],
     # where False means respective value in data are the padded 0
-    pos_vec = torch.tensor([math.pow(10000.0, 2.0 * (i // 2) / d_emb) for i in range(d_emb)])  # d_emb length
+    pos_vec = torch.tensor([math.pow(10000.0, 2.0 * (i // 2) / d_emb) for i in range(d_emb)]).to(device)  # d_emb length
     time_emb = data.unsqueeze(-1) / pos_vec
     time_emb[:, :, 0::2] = torch.sin(time_emb[:, :, 0::2])
     time_emb[:, :, 1::2] = torch.cos(time_emb[:, :, 1::2])
@@ -32,30 +32,28 @@ def get_q_all_grids(time_horizon, sep_for_grids, d_emb):
 
 
 class InputEmbLayer(nn.Module):
-    def __init__(self, a_type_list, m_type_list, d_emb, batch_size, time_horizon, sep_for_grids, real_a_seq_len, real_m_seq_len):
+    def __init__(self, a_type_list, d_emb, batch_size, time_horizon, sep_for_grids, device):
         super().__init__()
         self.a_type_list = a_type_list
-        self.m_type_list = m_type_list
         self.d_emb = d_emb
         self.batch_size = batch_size
         self.time_horizon = time_horizon
         self.sep_for_grids = sep_for_grids
-        self.real_a_seq_len = real_a_seq_len  # dict with structure:{1: tensor([11, 12, 12, 12, 13]), 2: tensor([11, 13, 21, 16,  8])}
-        self.real_m_seq_len = real_m_seq_len  # {0: tensor([16, 13, 20, 19, 11])}  with batch_size == 5
+        self.device = device
         self.a_type_emb = nn.Embedding(len(self.a_type_list), self.d_emb)
         self.softmax_attn_weights = nn.Softmax(dim=0)  # softmax apply on all action emb in cur batch
 
-    def forward(self, data):
+    def forward(self, data, real_a_seq_len):
         """
         data, tuple, with data[0]: padded action seq batch, data[1]: padded mental seq batch
+        real_a_seq_len: dict with structure:{1: tensor([11, 12, 12, 12, 13]), 2: tensor([11, 13, 21, 16,  8])}
         """
         a_data = data[0]  # dict with padded time seq, like: {1: torch.tensor([[1,3,0], [4,0,0], [3,4,5]]), 2: torch.tensor([[1,0,0], [2,3,5], [4,5,0]])}
-        m_data = data[1]
         L = a_data[self.a_type_list[0]].shape[1]  # L:max_a_seq_len after padding
         all_a_emb = torch.zeros((self.batch_size, len(self.a_type_list)*L, self.d_emb))
         for id, a_type in enumerate(self.a_type_list):
-            time_emb, pad_mask_exp = get_time_emb(a_data[a_type], self.d_emb)  # [batch_size, L, d_emb]
-            type_emb = self.a_type_emb(torch.LongTensor([id]))
+            time_emb, pad_mask_exp = get_time_emb(a_data[a_type], self.d_emb, self.device)  # [batch_size, L, d_emb]
+            type_emb = self.a_type_emb(torch.LongTensor([id]).to(self.device))
             type_emb = type_emb * pad_mask_exp
             cur_emb = time_emb + type_emb  # [batch_size, L, d_emb], with padded time stamps valued as zeros
             all_a_emb[:, id*L:(id+1)*L, :] = cur_emb
@@ -70,10 +68,10 @@ class InputEmbLayer(nn.Module):
         final_input_all_grids = torch.zeros((self.batch_size, num_grids, self.d_emb))
         for b_id in range(self.batch_size):
             cur_batch_w = attn_weights[b_id, :, :]  # [num_a_types*L, num_grids]
-            real_w = [cur_batch_w[id*L:id*L+self.real_a_seq_len[a_type][b_id], :] for (id, a_type) in enumerate(self.a_type_list)]
+            real_w = [cur_batch_w[id*L:id*L+real_a_seq_len[a_type][b_id], :] for (id, a_type) in enumerate(self.a_type_list)]
             real_w = torch.cat(real_w, dim=0)  # [num_real_a_times, num_grids]
             final_real_w = self.softmax_attn_weights(real_w).transpose(0, 1)  # [num_grids, num_real_a_times]
-            real_a_emb = [all_a_emb[b_id, id*L:id*L+self.real_a_seq_len[a_type][b_id], :] for (id, a_type) in enumerate(self.a_type_list)]
+            real_a_emb = [all_a_emb[b_id, id*L:id*L+real_a_seq_len[a_type][b_id], :] for (id, a_type) in enumerate(self.a_type_list)]
             final_real_a_emb = torch.cat(real_a_emb, dim=0)
             for g_id in range(num_grids):
                 tmp_input_emb = torch.zeros(self.d_emb)

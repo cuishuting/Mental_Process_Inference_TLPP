@@ -4,12 +4,74 @@ import argparse
 import torch
 import os
 from GetDataloader import get_dataloader
-from InputEmbLayer import InputEmbLayer
+from Encoder import Encoder
+from Utils import get_m_occur_grids_list
+import torch.optim as optim
+import matplotlib.pyplot as plt
 
-# todo: def an extra func to "get mental_occur_grids_list" to cal obj_func for encoder
+
+def train_epoch(model, train_dataloader, param, action_type_list, mental_type_list, optimizer):
+    model.train()
+    for id, (a_pad_batch, m_pad_batch, real_a_time_num, real_m_time_num) in enumerate(train_dataloader):
+        for a in action_type_list:
+            a_pad_batch[a] = a_pad_batch[a].to(param.device)
+            real_a_time_num[a] = real_a_time_num[a].to(param.device)
+        for m in mental_type_list:
+            m_pad_batch[m] = m_pad_batch[m].to(param.device)
+            real_m_time_num[m] = real_m_time_num[m].to(param.device)
+
+        pred_hz = model((a_pad_batch, m_pad_batch), real_a_time_num)
+        mental_occur_grids_list, _ = get_m_occur_grids_list(m_pad_batch, param.time_horizon, param.sep_for_grids,
+                                                         mental_type_list, real_m_time_num, param.batch_size)
+        # mental_occur_grids_list: shape: [batch_size, len(m_type_list), num_of_grids]
+        # todo: only consider one mental predicate here
+        neg_ll = model.obj_function(pred_hz, mental_occur_grids_list[:, 0, :])
+        if (id+1) % 20 == 0:
+            print("current neg ll during training is: ", neg_ll)
+
+        """backpropagation"""
+        neg_ll.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+
+def eval_epoch(model, test_dataloader, param, mental_type_list):
+    model.eval()
+
+    grids = np.arange(0, param.time_horizon, param.sep_for_grids)
+    with torch.no_grad():
+        for id, (a_pad_batch, m_pad_batch, real_a_time_num, real_m_time_num) in enumerate(test_dataloader):
+            a_pad_batch = a_pad_batch.to(param.device)
+            m_pad_batch = m_pad_batch.to(param.device)
+            real_a_time_num = real_a_time_num.to(param.device)
+            real_m_time_num = real_m_time_num.to(param.device)
+            pred_hz = model((a_pad_batch, m_pad_batch), real_a_time_num)  # [batch_size, num_grids, 1]
+            mental_occur_grids_list_test, org_time_dict = get_m_occur_grids_list(m_pad_batch, param.time_horizon, param.sep_for_grids,
+                                                             mental_type_list, real_m_time_num, param.batch_size)
+            # mental_occur_grids_list_test: shape: [batch_size, len(m_type_list), num_of_grids]
+            # org_time_dict: org_time_dict[m][b_id] to get mental m's real time seq in batch b_id
+            """
+            result visualization
+            """
+            for t_id in range(param.batch_size):
+                cur_pred_hz = pred_hz[t_id].reshape(-1).cpu()
+                plt.plot(grids, cur_pred_hz, color='blue', label='predicted hazard function')
+                # todo: for current simple case, only one mental predicate with index 0
+                cur_mental_oc_gr_list = mental_occur_grids_list_test[t_id][mental_type_list[0]]
+                scatter_pred_hz_list = []
+                for g_id in range(int(param.time_horizon / param.sep_for_grids)):
+                    if cur_mental_oc_gr_list[g_id]:
+                        scatter_pred_hz_list.append(cur_pred_hz[g_id])
+                # todo: for current simple case, only one mental predicate with index 0
+                plt.scatter(org_time_dict[0][t_id], scatter_pred_hz_list, marker='o', color='red')
+                plt.xlabel('grids')
+                plt.ylabel('hazard function')
+                plt.title('predicted hazard function of mental event with sep_for_grids: ' + str(param.sep_for_grids) + " train samples: " + str(param.num_sample))
+                plt.savefig("./result_visual/result_" + str(t_id) + "_" + str(param.num_sample) + "_trans_encoder.png")
+                plt.close()
+
 
 parser = argparse.ArgumentParser()
-
 parser.add_argument('-action_type_list', type=list, nargs='+')
 parser.add_argument('-mental_type_list', type=list, nargs='+')
 parser.add_argument('-time_tolerance', type=float)
@@ -19,15 +81,19 @@ parser.add_argument('-num_sample', type=int)
 parser.add_argument('-sep_for_grids', type=float)
 parser.add_argument('-sep_for_data_syn', type=float)
 parser.add_argument('-d_emb', type=int)
+parser.add_argument('-d_k', type=int)
+parser.add_argument('-d_v', type=int)
+parser.add_argument('-d_hid', type=int)
+parser.add_argument('-dropout', type=float)
 parser.add_argument('-batch_size', type=int)
 parser.add_argument('-lr', type=float)
 parser.add_argument('-num_iter', type=int)
-parser.add_argument('-log', type=str)
 param = parser.parse_args()
 
 param.device = torch.device('cuda')
 action_type_list = list(map(int, param.action_type_list[0]))  # cur: [1, 2]
 mental_type_list = list(map(int, param.mental_type_list[0]))  # cur: [0]
+num_grids = int(param.time_horizon / param.sep_for_grids)
 
 
 """
@@ -55,19 +121,37 @@ else:
     np.save(test_data_file_str, test_data_dict)
 
 train_dataloader = get_dataloader(org_train_data_dict, action_type_list, mental_type_list, param.batch_size)
+test_dataloader = get_dataloader(test_data_dict, action_type_list, mental_type_list, param.batch_size)
 
-for id, (a_pad_batch, m_pad_batch, real_a_time_num, real_m_time_num) in enumerate(train_dataloader):
-    if id == 0:
-        model = InputEmbLayer(a_type_list=action_type_list,
-                              m_type_list=mental_type_list,
-                              d_emb=param.d_emb,
-                              batch_size=param.batch_size,
-                              time_horizon=param.time_horizon,
-                              sep_for_grids=param.sep_for_grids,
-                              real_a_seq_len=real_a_time_num,
-                              real_m_seq_len=real_m_time_num)
-        input_all_grids = model((a_pad_batch, m_pad_batch))
-        print("********")
-        print(m_pad_batch)  # dict with padded time seq, like: {0: torch.tensor([[1,3,0], [4,0,0], [3,4,5]])}
-        print("********")
+encoder_for_hz = Encoder(d_emb=param.d_emb,
+                         d_k=param.d_k,
+                         d_v=param.d_v,
+                         d_hid=param.d_hid,
+                         dropout=param.dropout,
+                         a_type_list=action_type_list,
+                         batch_size=param.batch_size,
+                         time_horizon=param.time_horizon,
+                         sep_for_grids=param.sep_for_grids,
+                         device=param.device)
+encoder_for_hz.to(param.device)
+
+optimizer = optim.SGD(encoder_for_hz.parameters(), lr=param.lr)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
+
+"""Train encoder"""
+for epoch in range(param.num_iter):
+    train_epoch(encoder_for_hz, train_dataloader, param, action_type_list, mental_type_list, optimizer)
+    scheduler.step()
+"""Val encoder"""
+eval_epoch(encoder_for_hz, test_dataloader, param, mental_type_list)
+
+
+
+
+
+
+
+
+
+
 
