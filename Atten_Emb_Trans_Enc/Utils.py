@@ -3,7 +3,7 @@ import numpy as np
 
 def get_m_occur_grids_list(m_pad_batch, time_horizon, sep_for_grids, m_type_list, real_m_time_num, batch_size):
     """
-    m_pad_batch: dict with padded time seq, like: {0: torch.tensor([[1,3,0], [4,0,0], [3,4,5]])} with shape: [batch_size, max_seq_len]
+    m_pad_batch: dict with padded time seq, like: {0: torch.tensor([[1,3,0], [4,0,0], [3,4,5]])} each value has shape: [batch_size, max_seq_len]
     real_m_time_num:  like {0: tensor([16, 13, 20, 19, 11])}  with batch_size == 5
     output: True-False array with True signifying mental occurrence in cur grid, shape: [batch_size, num_mental_types, num_of_grids]
     """

@@ -23,10 +23,11 @@ def train_epoch(model, train_dataloader, param, action_type_list, mental_type_li
         pred_hz = model((a_pad_batch, m_pad_batch), real_a_time_num)
         mental_occur_grids_list, _ = get_m_occur_grids_list(m_pad_batch, param.time_horizon, param.sep_for_grids,
                                                          mental_type_list, real_m_time_num, param.batch_size)
-        # mental_occur_grids_list: shape: [batch_size, len(m_type_list), num_of_grids]
+        # mental_occur_grids_list: True-False list with shape: [batch_size, len(m_type_list), num_of_grids] with True
+        # signifying mental occurrence in cur grid
         # todo: only consider one mental predicate here
         neg_ll = model.obj_function(pred_hz, mental_occur_grids_list[:, 0, :])
-        if (id+1) % 20 == 0:
+        if (id+1) % 10 == 0:
             print("current neg ll during training is: ", neg_ll)
 
         """backpropagation"""
@@ -57,7 +58,11 @@ def eval_epoch(model, test_dataloader, param, mental_type_list, action_type_list
             """
             for t_id in range(param.batch_size):
                 cur_pred_hz = pred_hz[t_id].reshape(-1).cpu()
-                plt.plot(grids, cur_pred_hz, color='blue', label='predicted hazard function')
+
+                fig, (f1_hz, f2_srv) = plt.subplots(2, 1)
+                """plot predicted hazard function on each grid"""
+                f1_hz.plot(grids, cur_pred_hz, color='blue', label='predicted hazard function')
+
                 # todo: for current simple case, only one mental predicate with index 0
                 cur_mental_oc_gr_list = mental_occur_grids_list_test[t_id][mental_type_list[0]]
                 scatter_pred_hz_list = []
@@ -65,11 +70,30 @@ def eval_epoch(model, test_dataloader, param, mental_type_list, action_type_list
                     if cur_mental_oc_gr_list[g_id]:
                         scatter_pred_hz_list.append(cur_pred_hz[g_id])
                 # todo: for current simple case, only one mental predicate with index 0
-                plt.scatter(org_time_dict[0][t_id].cpu(), scatter_pred_hz_list, marker='o', color='red')
-                plt.xlabel('grids')
-                plt.ylabel('hazard function')
-                plt.title('predicted hazard function of mental event with sep_for_grids: ' + str(param.sep_for_grids) + " train samples: " + str(param.num_sample))
-                plt.savefig("./result_visual/result_" + str(t_id) + "_" + str(param.num_iter) + "_trans_encoder.png")
+                """plot ground truth mental occurrence on pred hazard func"""
+                f1_hz.scatter(org_time_dict[0][t_id].cpu(), scatter_pred_hz_list, marker='o', color='red')
+                f1_hz.set_title('pred hazard func of mental event with sep_for_grids: ' + str(param.sep_for_grids) + " train samples: " + str(param.num_sample))
+                f1_hz.set_xlabel("grids")
+                f1_hz.set_ylabel("hazard function")
+
+                survival_rate = []
+                last_grid_occur = False
+                for g_id in range(int(param.time_horizon / param.sep_for_grids)):
+                    if not mental_occur_grids_list_test[t_id][0][g_id]:
+                        if g_id == 0 or last_grid_occur:
+                            survival_rate.append(1 - cur_pred_hz[g_id])
+                            last_grid_occur = False
+                        else:
+                            survival_rate.append(survival_rate[g_id - 1] * (1 - cur_pred_hz[g_id]))
+                    else:
+                        survival_rate.append(survival_rate[g_id - 1] * (1 - cur_pred_hz[g_id]))
+                        last_grid_occur = True
+                """plot survival function(rate) based on pred hazard func"""
+                f2_srv.plot(grids, survival_rate, color='green', label='survival rate')
+                f2_srv.set_title("survival rate")
+                f2_srv.set_xlabel('grids')
+                f2_srv.set_ylabel('survival rate')
+                plt.savefig("./result_visual/result_add_srv_" + str(t_id) + "_" + str(param.num_iter) + "_trans_encoder.png")
                 plt.close()
 
 
