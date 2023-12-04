@@ -6,7 +6,7 @@ np.random.seed(1)
 
 class Logic_Model_Generator:
 
-    def __init__(self, time_tolerance, decay_rate, sep):
+    def __init__(self, time_tolerance, decay_rate, sep_for_data_syn, sep_for_grids):
 
         ### the following parameters are used to manually define the logic rules
         self.num_predicate = 3
@@ -19,7 +19,8 @@ class Logic_Model_Generator:
         self.action_predicate_set = [1, 2]
         self.head_predicate_set = [0, 1, 2]  # the index set of all head predicates
         self.decay_rate = decay_rate # decay kernel
-        self.sep = sep  # this sep determines the accuracy of intensity_max when sampling predicates
+        self.sep_for_data_syn = sep_for_data_syn  # this sep determines the accuracy of intensity_max when sampling predicates
+        self.sep_for_grids = sep_for_grids
 
         ### the following parameters are used to generate synthetic data
         ### for the learning part, the following is used to claim variables
@@ -209,7 +210,7 @@ class Logic_Model_Generator:
                 data[sample_ID][predicate_idx]['time'] = []
             t = 0  # cur_time
             while t < time_horizon:
-                grid = np.arange(t, time_horizon, self.sep)
+                grid = np.arange(t, time_horizon, self.sep_for_data_syn)
                 intensity_potential = []
                 for time in grid:
                     intensity_potential.append(
@@ -229,7 +230,7 @@ class Logic_Model_Generator:
                                                          / np.sum(np.array(
                         [self.intensity(t, head_idx, data[sample_ID]) for head_idx in self.head_predicate_set])))
                     idx = np.argmax(tmp)
-                    if t < time_horizon:
+                    if t < time_horizon and time_to_event > self.sep_for_grids:
                         data[sample_ID][idx]['time'].append(t)
                 else:
                     continue
