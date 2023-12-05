@@ -59,12 +59,9 @@ class InputEmbLayer(nn.Module):
             all_a_emb[:, id*L:(id+1)*L, :] = cur_emb
         q_all_grids = get_q_all_grids(self.time_horizon, self.sep_for_grids, self.d_emb)  # shape: [num_grids, d_emb]
         num_grids = int(self.time_horizon/self.sep_for_grids)
-        attn_weights = torch.zeros((self.batch_size, len(self.a_type_list)*L, num_grids))
-        for g_id in range(num_grids):
-            for a_emb_id in range(len(self.a_type_list)*L):
-                attn_weights[:, a_emb_id, g_id] = torch.tensor([torch.dot(all_a_emb[b_id, a_emb_id, :], q_all_grids[g_id, :]) /
-                                                                pow(self.d_emb, 0.5) for b_id in range(self.batch_size)])
-        # todo: begin of not using matrix calculation, but calculate on each batch separately, below is example when batch_id == 0
+        # attn_weights: shape:[batch_size, len(self.a_type_list)*L, num_grids], with padded emb's weight as zero
+        attn_weights = torch.matmul(q_all_grids.unsqueeze(0).expand(self.batch_size, num_grids, self.d_emb), all_a_emb.transpose(1, 2)).transpose(1, 2)
+
         final_input_all_grids = torch.zeros((self.batch_size, num_grids, self.d_emb))
         for b_id in range(self.batch_size):
             cur_batch_w = attn_weights[b_id, :, :]  # [num_a_types*L, num_grids]
@@ -72,12 +69,8 @@ class InputEmbLayer(nn.Module):
             real_w = torch.cat(real_w, dim=0)  # [num_real_a_times, num_grids]
             final_real_w = self.softmax_attn_weights(real_w).transpose(0, 1)  # [num_grids, num_real_a_times]
             real_a_emb = [all_a_emb[b_id, id*L:id*L+real_a_seq_len[a_type][b_id], :] for (id, a_type) in enumerate(self.a_type_list)]
-            final_real_a_emb = torch.cat(real_a_emb, dim=0)
-            for g_id in range(num_grids):
-                tmp_input_emb = torch.zeros(self.d_emb)
-                for a_id in range(final_real_w.shape[1]):
-                    tmp_input_emb += final_real_w[g_id][a_id] * final_real_a_emb[a_id]
-                final_input_all_grids[b_id][g_id] = tmp_input_emb
+            final_real_a_emb = torch.cat(real_a_emb, dim=0)  # [num_real_a_times, d_emb]
+            final_input_all_grids[b_id] = torch.matmul(final_real_w, final_real_a_emb)
 
         return final_input_all_grids
 
