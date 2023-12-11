@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 from Utils import clones
 from Add_Norm import SublayerConnection
 
@@ -9,6 +10,8 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.layers = clones(layer, N)
         self.norm = nn.LayerNorm(layer.size)  #todo: call for nn.LayerNorm may have bug: check what is param.layer
+
+
 
     def forward(self, x, mask):
         "Pass the input (and mask) through each layer in turn."
@@ -27,7 +30,7 @@ class EncoderLayer(nn.Module):
         self.sublayer = clones(SublayerConnection(size, dropout), 2)
         self.size = size
 
-    def forward(self, q, k, v, mask):
-        "Follow Figure 1 (left) for connections."
-        x = self.sublayer[0]((q, k, v), lambda q,k,v: self.self_attn(q, k, v, mask))
+    def forward(self, x, mask):
+        x = self.sublayer[0](x, lambda x: self.self_attn(x[0], x[1], x[2], mask))
+        # as for multi-attn in encoder, q&k(v) have various num of rows (num_of_grids&num_of_max_len*num_types)
         return self.sublayer[1](x, self.feed_forward)

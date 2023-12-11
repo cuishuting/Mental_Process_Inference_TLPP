@@ -82,32 +82,7 @@ class PositionwiseFeedForward(nn.Module):
         return self.w_2(self.dropout(self.w_1(x).relu()))
 
 
-class Embeddings(nn.Module):
-    """To get action or mental predicates' type embedding"""
-    def __init__(self, d_model, num_types):
-        super(Embeddings, self).__init__()
-        self.type_emb = nn.Embedding(num_types, d_model)
-        self.d_model = d_model
 
-    def forward(self, x):
-        return self.type_emb(x) * math.sqrt(self.d_model)
-
-
-def get_time_emb(data, d_emb, device):
-    """
-    return time encoding for each event's time stamp, which will not be included in autograd;
-    data shape: [batch_size, max_seq_len_cur_batch]
-    d_emb is the dimension of both time and type encoding
-    """
-    pad_mask = ~data.eq(0).to(device)  # True-False tensor with shape [batch_size, max_len_cur_batch],
-    # where False means respective value in data are the padded 0
-    pos_vec = torch.tensor([math.pow(10000.0, 2.0 * (i // 2) / d_emb) for i in range(d_emb)]).to(device)  # d_emb length
-    time_emb = data.unsqueeze(-1) / pos_vec
-    time_emb[:, :, 0::2] = torch.sin(time_emb[:, :, 0::2])
-    time_emb[:, :, 1::2] = torch.cos(time_emb[:, :, 1::2])
-    pad_mask_expand = pad_mask.unsqueeze(-1).expand(pad_mask.shape[0], pad_mask.shape[1], d_emb)
-    final_time_emb = time_emb * pad_mask_expand  # padded value will be encoded into d_emb-length zero vector
-    return final_time_emb, pad_mask_expand   # [batch_size, max_seq_len, time_emb_size]
 
 
 def get_q_all_grids(time_horizon, sep_for_grids, d_emb):
@@ -119,5 +94,14 @@ def get_q_all_grids(time_horizon, sep_for_grids, d_emb):
     q_all_grids[:, 0::2] = torch.sin(q_all_grids[:, 0::2])
     q_all_grids[:, 1::2] = torch.cos(q_all_grids[:, 1::2])
     return q_all_grids  # shape: [num_grids, d_emb]
+
+
+
+
+
+
+
+
+
 
 

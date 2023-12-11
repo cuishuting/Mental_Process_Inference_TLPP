@@ -1,6 +1,7 @@
 import torch.nn as nn
 from torch.nn.functional import log_softmax
 
+
 class EncoderDecoder(nn.Module):
 
     def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):

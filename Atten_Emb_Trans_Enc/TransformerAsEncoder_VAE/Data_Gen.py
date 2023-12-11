@@ -33,32 +33,31 @@ class Logic_Model_Generator:
 
         head_predicate_idx = 0
         self.model_parameter[head_predicate_idx] = {}
-        self.model_parameter[head_predicate_idx]['base'] = 0.3 # ini:0.1 0.3240
+        self.model_parameter[head_predicate_idx]['base'] = 0.1
 
         formula_idx = 0
         self.model_parameter[head_predicate_idx][formula_idx] = {}
-        self.model_parameter[head_predicate_idx][formula_idx]['weight_para'] = [0.2] #ini:0.09, 0.2975
+        self.model_parameter[head_predicate_idx][formula_idx]['weight_para'] = [0.6]
         # now, weight = "weight_para"[0] + "weight_para"[1] * cur_t
         '''
         action
         '''
         head_predicate_idx = 1
         self.model_parameter[head_predicate_idx] = {}
-        self.model_parameter[head_predicate_idx]['base'] = 0.2 # 0.4, 0.2577
+        self.model_parameter[head_predicate_idx]['base'] = 0.3
 
         formula_idx = 0
         self.model_parameter[head_predicate_idx][formula_idx] = {}
-        self.model_parameter[head_predicate_idx][formula_idx]['weight_para'] = [0.3] # 0.1, 0.2105
+        self.model_parameter[head_predicate_idx][formula_idx]['weight_para'] = [0.6]
 
 
         head_predicate_idx = 2
         self.model_parameter[head_predicate_idx] = {}
-        self.model_parameter[head_predicate_idx]['base'] = 0.1 # 0.2, 0.1361
+        self.model_parameter[head_predicate_idx]['base'] = 0.3
 
         formula_idx = 0
         self.model_parameter[head_predicate_idx][formula_idx] = {}
-        self.model_parameter[head_predicate_idx][formula_idx]['weight_para'] = [0.4] # 0.9, 0.4374
-
+        self.model_parameter[head_predicate_idx][formula_idx]['weight_para'] = [0.6]
         # NOTE: set the content of logic rules
         self.logic_template = self.logic_rule()
 
