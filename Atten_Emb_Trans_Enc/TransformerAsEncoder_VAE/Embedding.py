@@ -25,9 +25,12 @@ class Embeddings(nn.Module):
         final_time_emb = time_emb * pad_mask_expand
         return final_time_emb.requires_grad_(False)
 
-    def forward(self, type_tensor, time_tensor):
+    def forward(self, src):
         """return summation of type and time embedding,where type emb needs autograd but time emb does not"""
+        time_tensor = src[0]
+        type_tensor = src[1]
+        # src[2] is the query for encoder self-attn, composed of grids' mid time emb
         type_emb = self.type_emb(torch.LongTensor(type_tensor)) * math.sqrt(self.d_model)
         time_emb = self.get_time_emb(time_tensor)
-        return type_emb + time_emb
+        return type_emb + time_emb, src[2]
 

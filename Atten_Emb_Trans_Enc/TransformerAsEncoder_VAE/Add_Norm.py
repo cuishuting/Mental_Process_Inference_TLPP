@@ -17,6 +17,6 @@ class SublayerConnection(nn.Module):
         """x can be one of two types: (1)tuple, when sublayer is encoder/decoder layer (2)tensor,when sublayer is ffw"""
         """when it comes to (1), we add k/v as the add term in residual operation"""
         if type(x).__name__ == 'tuple':
-            return x[1] + self.dropout(self.norm(sublayer(x)))  # todo: check layernorm before or after residual?
+            return x[0] + self.dropout(self.norm(sublayer(x)))  # todo: check this row which trigger latest bug
         else:
             return x + self.dropout(self.norm(sublayer(x)))
