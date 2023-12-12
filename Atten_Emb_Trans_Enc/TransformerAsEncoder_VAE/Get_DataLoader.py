@@ -18,10 +18,9 @@ class SynDataset(Dataset):
         action_time_list = {}  # {a1: [t1, t2, ...], a2: [t1, t2, ...] }
         for a_id in self.action_type_list:
             action_time_list[a_id] = cur_sample_data[a_id]["time"]
-        mental_time_list = {}
+        mental_time_list = {}   # {m0: [t1, t2, ...]}
         for m_id in self.mental_type_list:
             mental_time_list[m_id] = cur_sample_data[m_id]["time"]
-
         return action_time_list, mental_time_list
 
 
@@ -37,16 +36,20 @@ def collate_fn(batch_samples, a_type_list, m_type_list):
     max_m_seq_len = max(len(m_org_seq) for m_org_seq in all_m_org_seq)
     pad_a_seq = {}
     pad_m_seq = {}
-    # todo: store each real occured time seq length for each action and mental predicate in each batch
-    real_a_time_num = {}
-    real_m_time_num = {}
+
     for a_type in a_type_list:
         pad_a_seq[a_type] = torch.tensor([a[a_type] + [0]*(max_a_seq_len - len(a[a_type])) for a in org_a_batch])
-        real_a_time_num[a_type] = torch.tensor([len(a[a_type]) for a in org_a_batch])
+
+    pad_a_time_batch = torch.cat([pad_a_seq[a] for a in a_type_list], dim=-1)
+    pad_a_type_batch = torch.cat([torch.tensor([idx]).unsqueeze(-1).expand(pad_a_seq[a].shape) for idx, a in enumerate(a_type_list)], dim=-1)
+
     for m_type in m_type_list:
         pad_m_seq[m_type] = torch.tensor([m[m_type] + [0] * (max_m_seq_len - len(m[m_type])) for m in org_m_batch])
-        real_m_time_num[m_type] = torch.tensor([len(m[m_type]) for m in org_m_batch])
-    return pad_a_seq, pad_m_seq, real_a_time_num, real_m_time_num
+
+    pad_m_time_batch = torch.cat([pad_m_seq[m] for m in m_type_list], dim=-1)
+    pad_m_type_batch = torch.cat([torch.tensor([idx]).unsqueeze(-1).expand(pad_m_seq[m].shape) for idx, m in enumerate(m_type_list)], dim=-1)
+
+    return pad_a_time_batch, pad_a_type_batch, pad_m_time_batch, pad_m_type_batch
 
 
 def get_dataloader(data, action_type_list, mental_type_list, batch_size):
