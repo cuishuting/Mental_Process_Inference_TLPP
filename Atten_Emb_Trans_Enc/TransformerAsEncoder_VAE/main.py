@@ -77,10 +77,16 @@ for idx, (pad_a_time_batch, pad_a_type_batch, pad_m_time_batch, pad_m_type_batch
     src_mask = pad_a_time_batch.eq(0)  # [batch_size, num_a_types*max_pad_len_in_cur_batch]
     q_input = Get_q_all_grids(param.time_horizon, param.sep_for_grids, param.d_emb, param.batch_size)
     src = (pad_a_time_batch, pad_a_type_batch, q_input)
+    # print("pad_a_time_batch:")
+    # print(pad_a_time_batch.shape)
+    # print("pad_a_type_batch:")
+    # print(pad_a_type_batch.shape)
+    # print("q_input:")
+    # print(q_input.shape)
     memory = test_model.encode(src, src_mask)
     print("memory:")
     print(memory)
-    print(memory.shape)
+    print(memory.shape)  # [batch_size, num_grids, param.d_emb]
 
 
 

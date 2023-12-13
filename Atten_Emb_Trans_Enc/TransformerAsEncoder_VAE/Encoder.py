@@ -15,7 +15,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, mask):
         "Pass the input (and mask) through each layer in turn."
-        for layer in self.layers:
+        for idx, layer in enumerate(self.layers):
             x = layer(x, mask)
         return self.norm(x)
 
@@ -32,7 +32,11 @@ class EncoderLayer(nn.Module):
 
     def forward(self, x, mask):
         # x: (k&v: action type emb + action time emb, q:grids' mid time emb)
-        x = self.sublayer[0](x, lambda x: self.self_attn(x[1], x[0], x[0], mask))
+        if type(x).__name__ == 'tuple':
+            x = self.sublayer[0](x, lambda x: self.self_attn(x[1], x[0], x[0], mask))
+
+        else:
+            x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
 
         # as for multi-attn in encoder, q&k(v) have various num of rows (num_of_grids&num_of_max_len*num_types)
         return self.sublayer[1](x, self.feed_forward)
