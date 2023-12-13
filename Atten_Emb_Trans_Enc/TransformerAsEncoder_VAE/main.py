@@ -1,4 +1,4 @@
-from Utils import MultiHeadedAttention, PositionwiseFeedForward, Get_q_all_grids
+from Utils import MultiHeadedAttention, PositionwiseFeedForward, Get_q_all_grids, subsequent_mask
 from Transformer import EncoderDecoder, Generator
 from Encoder import Encoder, EncoderLayer
 from Decoder import Decoder, DecoderLayer
@@ -77,26 +77,33 @@ for idx, (pad_a_time_batch, pad_a_type_batch, pad_m_time_batch, pad_m_type_batch
     src_mask = pad_a_time_batch.eq(0)  # [batch_size, num_a_types*max_pad_len_in_cur_batch]
     q_input = Get_q_all_grids(param.time_horizon, param.sep_for_grids, param.d_emb, param.batch_size)
     src = (pad_a_time_batch, pad_a_type_batch, q_input)
-    # print("pad_a_time_batch:")
-    # print(pad_a_time_batch.shape)
-    # print("pad_a_type_batch:")
-    # print(pad_a_type_batch.shape)
-    # print("q_input:")
-    # print(q_input.shape)
-    memory = test_model.encode(src, src_mask)
-    print("memory:")
-    print(memory)
-    print(memory.shape)  # [batch_size, num_grids, param.d_emb]
+    memory = test_model.encode(src, src_mask)  # [batch_size, num_grids, param.d_emb]
+    history_grids_time = torch.zeros((param.batch_size, 1))  # initialize begin token's time
+    begin_token = torch.ones((param.batch_size, 1)).type_as(src[1]) # 1 represent none mental occurs currently
+    history_grids_type = begin_token
+    # todo: currently we only have one mental type, we use 0 to represent the only real mental type
+    #  and 1 to represent none mental occurs
+    for i in range(num_grids):
+        out = test_model.decode(memory, src_mask, (history_grids_time, history_grids_type), subsequent_mask(history_grids_time.size(1)))
+        prob_all_types = test_model.generator(out)  # [batch_size, i+1, num_mental_types]
+        _, history_grids_type = torch.max(prob_all_types, dim=-1)  # []
+
+        cur_grid_time = torch.tensor([(i+1/2) * param.sep_for_grids]*param.batch_size).view(param.batch_size, 1)
+        history_grids_time = torch.cat([history_grids_time, cur_grid_time], dim=-1)
+
+        history_grids_type = torch.cat((begin_token, history_grids_type), dim=-1)
 
 
 
-    # print("pad_a_type_batch shape: ", pad_a_type_batch.shape)  # [batch_size, num_a_types*max_pad_len_in_cur_batch]
-    # print("pad_a_time_batch shape: ", pad_a_time_batch.shape)  # [batch_size, num_a_types*max_pad_len_in_cur_batch]
 
-
-    # print("cur_input_emb shape: ", cur_input_emb.shape)
-    # todo: [batch_size, num_a_types*max_pad_len_in_cur_batch, param.d_emb], will be regarded as k,v in self-attn of transformer's encoder
-
+        if i == num_grids-1:
+            print("history_grids_time:")
+            print(history_grids_time.shape)
+            print(history_grids_time)
+            print("history_grids_type:")
+            print(history_grids_type.shape)
+            print(history_grids_type)
+            
 
 
 

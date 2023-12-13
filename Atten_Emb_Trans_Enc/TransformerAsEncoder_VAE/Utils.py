@@ -13,7 +13,7 @@ def subsequent_mask(size):
     """Mask out subsequent positions."""
     attn_shape = (1, size, size)
     subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1).type(torch.uint8)
-    return subsequent_mask == 0
+    return subsequent_mask == 1
 
 
 def attention(query, key, value, mask=None, dropout=None):
@@ -42,11 +42,13 @@ class MultiHeadedAttention(nn.Module):
 
     def forward(self, query, key, value, mask=None):
         num_grids = query.shape[1]
-        if mask is not None:
-            # Same mask applied to all h heads.
-            mask = mask.unsqueeze(1).unsqueeze(2).repeat(1, self.h, num_grids, 1)
         nbatches = query.size(0)
-
+        if mask is not None:
+            if not (query.shape[1] == key.shape[1]):  # the case of self-attn in encoder
+                # Same mask applied to all h heads.
+                mask = mask.unsqueeze(1).unsqueeze(2).repeat(1, self.h, num_grids, 1)
+            else:  # the case of self-attn in decoder
+                mask = mask.unsqueeze(1).repeat(nbatches, self.h, 1, 1)
         # 1) Do all the linear projections in batch from d_model => h x d_k
         query, key, value = [
             lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
@@ -55,7 +57,11 @@ class MultiHeadedAttention(nn.Module):
         # shape of q, k, v from: [nbatches, num_grids/num_of_action_types*max_pad_len, d_model]
         # => to: [nbatches, h, num_grids/num_of_action_types*max_pad_len, d_k]  (d_model=d_k*h)
 
+
+
         # 2) Apply attention on all the projected vectors in batch.
+
+
         x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
         # 3) "Concat" using a view and apply a final linear.
         x = (

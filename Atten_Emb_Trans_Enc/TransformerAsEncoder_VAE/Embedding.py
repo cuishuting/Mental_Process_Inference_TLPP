@@ -32,5 +32,8 @@ class Embeddings(nn.Module):
         # src[2] is the query for encoder self-attn, composed of grids' mid time emb
         type_emb = self.type_emb(torch.LongTensor(type_tensor)) * math.sqrt(self.d_model)
         time_emb = self.get_time_emb(time_tensor)
-        return type_emb + time_emb, src[2]
+        if len(src) == 3:  # for encoder's self-attn block
+            return type_emb + time_emb, src[2]
+        else: # for decoder's src-attn and cross-attn block
+            return type_emb + time_emb
 
