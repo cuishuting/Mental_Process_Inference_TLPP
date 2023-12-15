@@ -2,6 +2,7 @@ import torch.nn as nn
 import copy
 import torch
 import math
+import numpy as np
 
 
 def clones(module, N):
@@ -14,6 +15,45 @@ def subsequent_mask(size):
     attn_shape = (1, size, size)
     subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1).type(torch.uint8)
     return subsequent_mask == 1
+
+
+def get_m_occur_grids_list(pad_m_time_batch, time_horizon, sep_for_grids, batch_size):
+    """
+    pad_m_time_batch: shape: [batch_size, max_len_after_padded_m0]
+    output: True-False array with True signifying mental occurrence in cur grid, shape: [batch_size, num_of_grids](only 1 mental currently)
+    """
+    org_time_dict = dict()
+    org_time_dict[0] = dict()
+    num_of_grids = int(time_horizon / sep_for_grids)
+    processed_data = np.zeros([batch_size, num_of_grids])
+    for b_id in range(batch_size):
+        if len(np.where(pad_m_time_batch[b_id] == 0)[0]) == 0:
+            org_time_dict[0][b_id] = pad_m_time_batch[b_id]
+        else:
+            begin_pad_idx = np.where(pad_m_time_batch[b_id] == 0)[0][0]
+            org_time_dict[0][b_id] = pad_m_time_batch[b_id][:begin_pad_idx]
+        cur_check_time_pos = 0
+        cur_real_time_seq = org_time_dict[0][b_id]
+        for g_id in range(num_of_grids):
+            cur_grid_right_time = (g_id + 1) * sep_for_grids
+            if (cur_check_time_pos < len(cur_real_time_seq)) and (cur_real_time_seq[cur_check_time_pos] <= cur_grid_right_time):
+                processed_data[b_id][g_id] = cur_real_time_seq[cur_check_time_pos]
+                cur_check_time_pos += 1
+            else:
+                continue
+    return processed_data != 0
+
+
+def Get_q_all_grids(time_horizon, sep_for_grids, d_emb, batch_size):
+    # todo: return query tensor on all grids with shape [n, d_emb], n is num of grids, expand first dim as batch_size
+    num_grids = int(time_horizon / sep_for_grids)
+    mid_time_list = torch.tensor([(i+1/2) * sep_for_grids for i in range(num_grids)])
+    pos_vec = torch.tensor([math.pow(10000.0, 2.0 * (i // 2) / d_emb) for i in range(d_emb)])
+    q_all_grids = mid_time_list.unsqueeze(-1).expand(num_grids, d_emb) / pos_vec
+    q_all_grids[:, 0::2] = torch.sin(q_all_grids[:, 0::2])
+    q_all_grids[:, 1::2] = torch.cos(q_all_grids[:, 1::2])
+    q_all_grids = q_all_grids.unsqueeze(0).expand(batch_size, num_grids, d_emb)
+    return q_all_grids.requires_grad_(False)  # shape: [batch_size, num_grids, d_emb]
 
 
 def attention(query, key, value, mask=None, dropout=None):
@@ -88,24 +128,28 @@ class PositionwiseFeedForward(nn.Module):
         return self.w_2(self.dropout(self.w_1(x).relu()))
 
 
-def Get_q_all_grids(time_horizon, sep_for_grids, d_emb, batch_size):
-    # todo: return query tensor on all grids with shape [n, d_emb], n is num of grids, expand first dim as batch_size
-    num_grids = int(time_horizon / sep_for_grids)
-    mid_time_list = torch.tensor([(i+1/2) * sep_for_grids for i in range(num_grids)])
-    pos_vec = torch.tensor([math.pow(10000.0, 2.0 * (i // 2) / d_emb) for i in range(d_emb)])
-    q_all_grids = mid_time_list.unsqueeze(-1).expand(num_grids, d_emb) / pos_vec
-    q_all_grids[:, 0::2] = torch.sin(q_all_grids[:, 0::2])
-    q_all_grids[:, 1::2] = torch.cos(q_all_grids[:, 1::2])
-    q_all_grids = q_all_grids.unsqueeze(0).expand(batch_size, num_grids, d_emb)
-    return q_all_grids.requires_grad_(False)  # shape: [batch_size, num_grids, d_emb]
+class NegLogLikelihood(nn.Module):
+    """discrete time repeated survival process model's negative log likelihood"""
+    def __init__(self, batch_size):
+        super(NegLogLikelihood, self).__init__()
+        self.log_likelihood = torch.zeros(1).requires_grad_(True)
+        self.batch_size = batch_size
 
-
-
-
-
-
-
-
-
-
-
+    def forward(self, pred_hz, target_m):
+        """
+        1. pred_hz: output from transformer's decoder's generator with shape: [batch_size, num_grids, num_mental_types]
+        currently, we use pred_hz[:,:,0] to represent mental 0
+        2. target_m: True-False array with True signifying ground truth mental occurrence in cur grid, shape:
+        [batch_size, num_of_grids]
+        """
+        pred_hz_m0 = pred_hz[:, :, 0]
+        num_grids = target_m.shape[1]
+        for b_id in range(self.batch_size):
+            target_m_curb = target_m[b_id]
+            pred_hz_m0_curb = pred_hz_m0[b_id]
+            for g_id in range(num_grids):
+                if target_m_curb[g_id]:
+                    self.log_likelihood += torch.log(pred_hz_m0_curb[g_id])
+                else:
+                    self.log_likelihood += torch.log(1 - pred_hz_m0_curb[g_id])
+        return -1 * self.log_likelihood / self.batch_size

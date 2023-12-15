@@ -1,5 +1,5 @@
 import torch.nn as nn
-from torch.nn.functional import log_softmax
+from torch.nn.functional import log_softmax, softmax
 
 
 class EncoderDecoder(nn.Module):
@@ -26,9 +26,20 @@ class EncoderDecoder(nn.Module):
 class Generator(nn.Module):
     """Define standard linear + logsoftmax generation step for each grid's hazard func."""
 
+    #todo: if we want decoder of transformer finally output each mental type's prob in each grid,
+    # use below init() & forward()
     def __init__(self, d_model, num_mental_types):
         super(Generator, self).__init__()
         self.proj = nn.Linear(d_model, num_mental_types)
 
     def forward(self, x):
-        return log_softmax(self.proj(x), dim=-1)
+        # todo: an important advantage about using log_softmax in addition to numerical stability: this activation
+        #  function heavily penalizes wrong class prediction as compared to its Softmax counterpart
+        # return log_softmax(self.proj(x), dim=-1)
+        return softmax(self.proj(x), dim=-1)  # consider output[0] as hz of mental 0
+
+
+
+
+
+
