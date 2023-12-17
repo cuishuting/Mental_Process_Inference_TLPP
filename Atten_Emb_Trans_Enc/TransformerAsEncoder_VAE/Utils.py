@@ -41,7 +41,7 @@ def get_m_occur_grids_list(pad_m_time_batch, time_horizon, sep_for_grids, batch_
                 cur_check_time_pos += 1
             else:
                 continue
-    return processed_data != 0
+    return processed_data != 0, org_time_dict
 
 
 def Get_q_all_grids(time_horizon, sep_for_grids, d_emb, batch_size):
@@ -128,28 +128,17 @@ class PositionwiseFeedForward(nn.Module):
         return self.w_2(self.dropout(self.w_1(x).relu()))
 
 
-class NegLogLikelihood(nn.Module):
-    """discrete time repeated survival process model's negative log likelihood"""
-    def __init__(self, batch_size):
-        super(NegLogLikelihood, self).__init__()
-        self.log_likelihood = torch.zeros(1).requires_grad_(True)
-        self.batch_size = batch_size
-
-    def forward(self, pred_hz, target_m):
-        """
-        1. pred_hz: output from transformer's decoder's generator with shape: [batch_size, num_grids, num_mental_types]
-        currently, we use pred_hz[:,:,0] to represent mental 0
-        2. target_m: True-False array with True signifying ground truth mental occurrence in cur grid, shape:
-        [batch_size, num_of_grids]
-        """
-        pred_hz_m0 = pred_hz[:, :, 0]
-        num_grids = target_m.shape[1]
-        for b_id in range(self.batch_size):
-            target_m_curb = target_m[b_id]
-            pred_hz_m0_curb = pred_hz_m0[b_id]
-            for g_id in range(num_grids):
-                if target_m_curb[g_id]:
-                    self.log_likelihood += torch.log(pred_hz_m0_curb[g_id])
-                else:
-                    self.log_likelihood += torch.log(1 - pred_hz_m0_curb[g_id])
-        return -1 * self.log_likelihood / self.batch_size
+def neg_log_likelihood(batch_size, pred_hz, target_m):
+    log_likelihood = torch.zeros(1)
+    pred_hz_m0 = pred_hz[:, :, 0]
+    num_grids = target_m.shape[1]
+    for b_id in range(batch_size):
+        target_m_curb = target_m[b_id]
+        pred_hz_m0_curb = pred_hz_m0[b_id]
+        for g_id in range(num_grids):
+            if target_m_curb[g_id]:
+                log_likelihood = log_likelihood + torch.log(pred_hz_m0_curb[g_id])
+            else:
+                log_likelihood = log_likelihood + torch.log(1 - pred_hz_m0_curb[g_id])
+    final_neg_log_likelihood = -1 * log_likelihood / batch_size
+    return final_neg_log_likelihood

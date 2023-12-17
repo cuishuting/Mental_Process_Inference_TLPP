@@ -35,6 +35,7 @@ class EncoderLayer(nn.Module):
         if type(x).__name__ == 'tuple':
             x = self.sublayer[0](x, lambda x: self.self_attn(x[1], x[0], x[0], mask))
 
+
         else:
             x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
 
