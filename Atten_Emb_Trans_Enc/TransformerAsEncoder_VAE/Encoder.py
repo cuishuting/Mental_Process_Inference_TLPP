@@ -1,5 +1,4 @@
 import torch.nn as nn
-import torch
 from Utils import clones
 from Add_Norm import SublayerConnection
 
@@ -9,12 +8,9 @@ class Encoder(nn.Module):
     def __init__(self, layer, N):
         super(Encoder, self).__init__()
         self.layers = clones(layer, N)
-        self.norm = nn.LayerNorm(layer.size)  #todo: call for nn.LayerNorm may have bug: check what is param.layer
-
-
+        self.norm = nn.LayerNorm(layer.size)  # layer.size: param.d_emb in run.sh
 
     def forward(self, x, mask):
-        "Pass the input (and mask) through each layer in turn."
         for idx, layer in enumerate(self.layers):
             x = layer(x, mask)
         return self.norm(x)
@@ -22,7 +18,6 @@ class Encoder(nn.Module):
 
 class EncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
-
     def __init__(self, size, self_attn, feed_forward, dropout):
         super(EncoderLayer, self).__init__()
         self.self_attn = self_attn
@@ -31,13 +26,8 @@ class EncoderLayer(nn.Module):
         self.size = size
 
     def forward(self, x, mask):
-        # x: (k&v: action type emb + action time emb, q:grids' mid time emb)
-        if type(x).__name__ == 'tuple':
-            x = self.sublayer[0](x, lambda x: self.self_attn(x[1], x[0], x[0], mask))
-
-
-        else:
-            x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
-
-        # as for multi-attn in encoder, q&k(v) have various num of rows (num_of_grids&num_of_max_len*num_types)
+        x = self.sublayer[0](x, lambda x: self.self_attn(x[1], x[0], x[0], mask))
+        # in this case, x is a tuple belike: (type_emb + time_emb, src[2])
+        # where src[2] is query comprising of grids' mid times
         return self.sublayer[1](x, self.feed_forward)
+        # todo: finally returned shape: [batch_size, num_grids, d_model]

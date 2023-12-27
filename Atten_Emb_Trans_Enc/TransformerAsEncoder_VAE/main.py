@@ -32,22 +32,25 @@ def make_model(param, action_type_list, mental_type_list):
 
 
 def model_pred_hz(model, pad_a_time_batch, pad_a_type_batch, param, num_grids, mental_type_list):
-    src_mask = pad_a_time_batch.eq(0)  # [batch_size, num_a_types*max_pad_len_in_cur_batch]
-    q_input = Get_q_all_grids(param.time_horizon, param.sep_for_grids, param.d_emb, param.batch_size)
+    src_mask = pad_a_time_batch.eq(0).to(param.device)
+    # todo: [batch_size, num_a_types*max_pad_len_in_cur_batch], False: real time stamp, True: padded 0
+    q_input = Get_q_all_grids(param.time_horizon, param.sep_for_grids, param.d_emb, param.batch_size).to(param.device)
+    # shape: [batch_size, num_grids, d_emb]
     src = (pad_a_time_batch, pad_a_type_batch, q_input)
     memory = model.encode(src, src_mask)  # [batch_size, num_grids, param.d_emb]
-    history_grids_time = torch.zeros((param.batch_size, 1))  # initialize begin token's time
-    begin_token = torch.ones((param.batch_size, 1)).type_as(src[1])  # 1 represent none mental occurs currently
+    history_grids_time = torch.zeros((param.batch_size, 1)).to(param.device)  # initialize begin token's time
+    begin_token = torch.ones((param.batch_size, 1)).type_as(src[1]).to(param.device)  # 1 represent none mental occurs currently
     history_grids_type = begin_token
-    pred_hz = torch.zeros((param.batch_size, num_grids, len(mental_type_list) + 1)).requires_grad_(True)
+    pred_hz = torch.zeros((param.batch_size, num_grids, len(mental_type_list) + 1)).requires_grad_(True).to(param.device)
     # todo: currently we only have one mental type, we use 0 to represent the only real mental type
     #  and 1 to represent none mental occurs
     for i in range(num_grids):
-        out = model.decode(memory, src_mask, (history_grids_time, history_grids_type),
-                           subsequent_mask(history_grids_time.size(1)))
+        out = model.decode(memory=memory, tgt=(history_grids_time, history_grids_type),
+                           tgt_mask=subsequent_mask(history_grids_time.size(1)))
+        # out shape: [batch_size, i+1, param.d_emb]
         prob_all_types = model.generator(out)  # [batch_size, i+1, num_mental_types]
         _, history_grids_type = torch.max(prob_all_types, dim=-1)  # [batch_size, i+1]
-        cur_grid_time = torch.tensor([(i + 1 / 2) * param.sep_for_grids] * param.batch_size).view(param.batch_size, 1)
+        cur_grid_time = torch.tensor([(i + 1 / 2) * param.sep_for_grids] * param.batch_size).view(param.batch_size, 1).to(param.device)
         history_grids_time = torch.cat((history_grids_time, cur_grid_time), dim=-1)
         history_grids_type = torch.cat((begin_token, history_grids_type), dim=-1)
 
@@ -60,6 +63,8 @@ def train_epoch(train_dataloader, model, param, num_grids, mental_type_list, opt
     model.train()
     for idx, (pad_a_time_batch, pad_a_type_batch, pad_m_time_batch, pad_m_type_batch) in enumerate(train_dataloader):
         """get pred hz and ground truth mental occurrence in curb"""
+        pad_a_time_batch = pad_a_time_batch.to(param.device)
+        pad_a_type_batch = pad_a_type_batch.to(param.device)
         pred_hz = model_pred_hz(model, pad_a_time_batch, pad_a_type_batch, param, num_grids, mental_type_list)
         m_occur_grids_list_curb, _ = get_m_occur_grids_list(pad_m_time_batch, param.time_horizon, param.sep_for_grids,
                                                          param.batch_size)
@@ -77,6 +82,8 @@ def eval_epoch(model, test_dataloader, param, num_grids, mental_type_list):
     grids = np.arange(0, param.time_horizon, param.sep_for_grids)
     with torch.no_grad():
         for idx, (pad_a_time_batch, pad_a_type_batch, pad_m_time_batch, pad_m_type_batch) in enumerate(test_dataloader):
+            pad_a_time_batch = pad_a_time_batch.to(param.device)
+            pad_a_type_batch = pad_a_type_batch.to(param.device)
             m_occur_grids_list_curb, org_time_dict = get_m_occur_grids_list(pad_m_time_batch, param.time_horizon, param.sep_for_grids,
                                                              param.batch_size)
             # shape: [batch_size, num_of_grids]
@@ -96,11 +103,11 @@ def eval_epoch(model, test_dataloader, param, num_grids, mental_type_list):
                     if cur_mental_oc_gr_list[g_id]:
                         scatter_pred_hz_list.append(cur_pred_hz[g_id])
                 plt.scatter(org_time_dict[0][t_id].cpu(), scatter_pred_hz_list, marker='o', color='red')
-                plt.title('pred hazard func of mental event with sep_for_grids: ' + str(param.sep_for_grids) + " train samples: " + str(param.num_sample))
+                plt.title('pred hz of m with sep_for_grids: ' + str(param.sep_for_grids) + " train samples: " + str(param.num_sample))
                 plt.xlabel("grids")
                 plt.ylabel("hazard function")
-                plt.savefig("./result_visual/sample_" + str(param.num_sample) + "_grid_size_" + str(param.sep_for_grids) + "_batch_" + str(param.batch_size) + "/" + "fig_" + str(t_id) + ".png")
-                plt.close()
+                plt.savefig("./result_visual/sample_" + str(param.num_sample) + "_th_" + str(param.time_horizon) + "_sg_" + str(param.sep_for_grids) + "_bs_" + str(param.batch_size) + "/fig_" + str(t_id) + ".png")
+                plt.clf()
 
 
 parser = argparse.ArgumentParser()
@@ -130,7 +137,7 @@ num_grids = int(param.time_horizon / param.sep_for_grids)
 
 
 """Generate train data"""
-org_train_data_file_path = "./Synthetic_Data/data_" + str(param.num_sample) + "_sample_" + str(param.batch_size) + "_batch_" + str(param.sep_for_grids) + "_sep_grids/train_data_gen_sep_" + str(param.sep_for_data_syn) + ".npy"
+org_train_data_file_path = "./Synthetic_Data/data_"+str(param.num_sample)+"_sample_"+str(param.time_horizon)+"_th_"+str(param.sep_for_grids)+"_sg_"+str(param.batch_size)+"_bs/train_data.npy"
 if os.path.exists(org_train_data_file_path):
     org_train_data = np.load(org_train_data_file_path, allow_pickle=True).item()
 else:
@@ -143,7 +150,7 @@ train_dataloader = get_dataloader(org_train_data, action_type_list, mental_type_
 
 
 """Generate test data"""
-org_test_data_file_path = "./Synthetic_Data/data_" + str(param.num_sample) + "_sample_" + str(param.batch_size) + "_batch_" + str(param.sep_for_grids) + "_sep_grids/test_data_gen_sep_" + str(param.sep_for_data_syn) + ".npy"
+org_test_data_file_path = "./Synthetic_Data/data_"+str(param.num_sample)+"_sample_"+str(param.time_horizon)+"_th_"+str(param.sep_for_grids)+"_sg_"+str(param.batch_size)+"_bs/test_data.npy"
 if os.path.exists(org_test_data_file_path):
     org_test_data = np.load(org_test_data_file_path, allow_pickle=True).item()
 else:
@@ -156,6 +163,7 @@ test_dataloader = get_dataloader(org_test_data, action_type_list, mental_type_li
 
 
 model = make_model(param, action_type_list, mental_type_list)
+model.to(param.device)
 optimizer = optim.SGD(model.parameters(), lr=param.lr)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=param.lr_scheduler_step, gamma=0.5)
 print("begin of training")

@@ -1,5 +1,5 @@
 import torch.nn as nn
-from torch.nn.functional import log_softmax, softmax
+from torch.nn.functional import softmax
 
 
 class EncoderDecoder(nn.Module):
@@ -15,19 +15,17 @@ class EncoderDecoder(nn.Module):
     def encode(self, src, src_mask):
         return self.encoder(self.src_embed(src), src_mask)
 
-    def decode(self, memory, src_mask, tgt, tgt_mask):
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+    def decode(self, memory, tgt, tgt_mask):
+        return self.decoder(self.tgt_embed(tgt), memory, tgt_mask)
 
     def forward(self, src, tgt, src_mask, tgt_mask):
         """Take in and process masked src and target sequences"""
-        return self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask)
+        return self.decode(self.encode(src, src_mask), tgt, tgt_mask)
 
 
 class Generator(nn.Module):
     """Define standard linear + logsoftmax generation step for each grid's hazard func."""
 
-    #todo: if we want decoder of transformer finally output each mental type's prob in each grid,
-    # use below init() & forward()
     def __init__(self, d_model, num_mental_types):
         super(Generator, self).__init__()
         self.proj = nn.Linear(d_model, num_mental_types)

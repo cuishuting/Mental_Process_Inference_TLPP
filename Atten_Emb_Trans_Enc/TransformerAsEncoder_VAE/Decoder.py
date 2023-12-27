@@ -11,9 +11,10 @@ class Decoder(nn.Module):
         self.layers = clones(layer, N)
         self.norm = nn.LayerNorm(layer.size)
 
-    def forward(self, x, memory, src_mask, tgt_mask):
+    def forward(self, x, memory, tgt_mask):
+        # todo: x is from Embeddings.forward(src)
         for layer in self.layers:
-            x = layer(x, memory, src_mask, tgt_mask)
+            x = layer(x, memory, tgt_mask)
         return self.norm(x)
 
 
@@ -28,14 +29,14 @@ class DecoderLayer(nn.Module):
         self.feed_forward = feed_forward
         self.sublayer = clones(SublayerConnection(size, dropout), 3)
 
-    def forward(self, x, memory, src_mask, tgt_mask):
+    def forward(self, x, memory, tgt_mask):
+        """
+        a. x: from Embeddings.forward(src=(history_grids_time, history_grids_type)) with
+        shape: [batch_size, cur_output_emb_grids_num, d_model]
+        b. memory: from model.encode(), with shape [batch_size, num_grids, param.d_emb]
+        c. tgt_mask: subsequent mask with shape: [1, cur_output_emb_grids_num, cur_output_emb_grids_num]
+        """
         m = memory
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
         x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m))
-        # todo: check whether it's right to not to feed src_mask into cross-attn in decoder
-        #  because we assume that k&v from encoder in cross-attn has already consider the effect of masks
-        #  and because the row number of q and k&v in encoder's self-attn are various so the src_mask, which is
-        #  obtained from padded org_data and has correlation with input k&v's num of rows, can not explain the padding
-        #  situation of output memory (as k&v in decoder's cross attn) from encoder whose num of rows equals to num of grids
-
         return self.sublayer[2](x, self.feed_forward)

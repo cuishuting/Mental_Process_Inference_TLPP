@@ -45,10 +45,8 @@ def collate_fn(batch_samples, a_type_list, m_type_list):
 
     for m_type in m_type_list:
         pad_m_seq[m_type] = torch.tensor([m[m_type] + [0] * (max_m_seq_len - len(m[m_type])) for m in org_m_batch])
-
     pad_m_time_batch = torch.cat([pad_m_seq[m] for m in m_type_list], dim=-1)
     pad_m_type_batch = torch.cat([torch.tensor([idx]).unsqueeze(-1).expand(pad_m_seq[m].shape) for idx, m in enumerate(m_type_list)], dim=-1)
-
     return pad_a_time_batch, pad_a_type_batch, pad_m_time_batch, pad_m_type_batch
 
 

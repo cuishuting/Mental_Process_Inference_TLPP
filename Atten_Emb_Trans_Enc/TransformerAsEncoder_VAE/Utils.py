@@ -58,6 +58,11 @@ def Get_q_all_grids(time_horizon, sep_for_grids, d_emb, batch_size):
 
 def attention(query, key, value, mask=None, dropout=None):
     """Compute 'Scaled Dot Product Attention'"""
+    """
+    in the case of self-attn in encoder:
+        shape of q,k,v: [batche_size, h, num_grids(q)/num_of_action_types*max_pad_len(k&v), d_k]  (d_model=d_k*h)
+        shape of mask: [batch_size, h, num_grids, num_a_types*max_pad_len_in_cur_batch]
+    """
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
     if mask is not None:
@@ -81,43 +86,43 @@ class MultiHeadedAttention(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, query, key, value, mask=None):
+        """
+        query: [batch_size, num_grids, param.d_emb]
+        key&value: [batch_size, num_a_types * max_pad_len_in_cur_batch, param.d_emb]
+        mask: [batch_size, num_a_types*max_pad_len_in_cur_batch], False: real time stamp, True: padded 0
+        """
         num_grids = query.shape[1]
-        nbatches = query.size(0)
+        nbatches = query.shape[0]
         if mask is not None:
             if not (query.shape[1] == key.shape[1]):  # the case of self-attn in encoder
                 # Same mask applied to all h heads.
-                mask = mask.unsqueeze(1).unsqueeze(2).repeat(1, self.h, num_grids, 1)
+                mask = mask.unsqueeze(1).unsqueeze(2).repeat(1, self.h, num_grids, 1).to('cuda')
             else:  # the case of self-attn in decoder
-                mask = mask.unsqueeze(1).repeat(nbatches, self.h, 1, 1)
+                mask = mask.unsqueeze(1).repeat(nbatches, self.h, 1, 1).to('cuda')
         # 1) Do all the linear projections in batch from d_model => h x d_k
         query, key, value = [
             lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
             for lin, x in zip(self.linears, (query, key, value))
         ]
-        # shape of q, k, v from: [nbatches, num_grids/num_of_action_types*max_pad_len, d_model]
-        # => to: [nbatches, h, num_grids/num_of_action_types*max_pad_len, d_k]  (d_model=d_k*h)
-
-
 
         # 2) Apply attention on all the projected vectors in batch.
+        x, self.attn = attention(query, key, value, mask=mask)
+        # todo: x's shape: [batch_size, h, num_grids, d_k]
 
-
-        x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
         # 3) "Concat" using a view and apply a final linear.
         x = (
-            x.transpose(1, 2)   # before transpose: [nbatches, rows_of_query, d_model]
+            x.transpose(1, 2)
             .contiguous()
             .view(nbatches, -1, self.h * self.d_k)
         )
         del query
         del key
         del value
-        return self.linears[-1](x)  # [nbatches, rows_of_query, d_model]
+        return self.linears[-1](x)  # todo: shape: [batch_size, num_grids, d_model]
 
 
 class PositionwiseFeedForward(nn.Module):
     """Implements FFN equation."""
-
     def __init__(self, d_model, d_ff, dropout=0.1):
         super(PositionwiseFeedForward, self).__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
@@ -129,7 +134,7 @@ class PositionwiseFeedForward(nn.Module):
 
 
 def neg_log_likelihood(batch_size, pred_hz, target_m):
-    log_likelihood = torch.zeros(1)
+    log_likelihood = torch.zeros(1).to('cuda')
     pred_hz_m0 = pred_hz[:, :, 0]
     num_grids = target_m.shape[1]
     for b_id in range(batch_size):
