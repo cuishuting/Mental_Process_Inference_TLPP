@@ -5,7 +5,6 @@ np.random.seed(1)
 
 
 class Logic_Model_Generator:
-
     def __init__(self, time_tolerance, decay_rate, sep_for_data_syn, sep_for_grids):
 
         ### the following parameters are used to manually define the logic rules
@@ -15,10 +14,10 @@ class Logic_Model_Generator:
         self.EQUAL = 'EQUAL'
         self.AFTER = 'AFTER'
         self.Time_tolerance = time_tolerance
-        self.mental_predicate_set = [0]
-        self.action_predicate_set = [1, 2]
-        self.head_predicate_set = [0, 1, 2]  # the index set of all head predicates
-        self.decay_rate = decay_rate # decay kernel
+        self.mental_predicate_set = [1]
+        self.action_predicate_set = [2, 3]
+        self.head_predicate_set = [1, 2, 3]  # the index set of all head predicates
+        self.decay_rate = decay_rate  # decay kernel
         self.sep_for_data_syn = sep_for_data_syn  # this sep determines the accuracy of intensity_max when sampling predicates
         self.sep_for_grids = sep_for_grids
 
@@ -31,18 +30,17 @@ class Logic_Model_Generator:
         mental
         '''
 
-        head_predicate_idx = 0
+        head_predicate_idx = 1
         self.model_parameter[head_predicate_idx] = {}
         self.model_parameter[head_predicate_idx]['base'] = 0.1
 
         formula_idx = 0
         self.model_parameter[head_predicate_idx][formula_idx] = {}
         self.model_parameter[head_predicate_idx][formula_idx]['weight_para'] = [0.6]
-        # now, weight = "weight_para"[0] + "weight_para"[1] * cur_t
         '''
         action
         '''
-        head_predicate_idx = 1
+        head_predicate_idx = 2
         self.model_parameter[head_predicate_idx] = {}
         self.model_parameter[head_predicate_idx]['base'] = 0.3
 
@@ -51,7 +49,7 @@ class Logic_Model_Generator:
         self.model_parameter[head_predicate_idx][formula_idx]['weight_para'] = [0.6]
 
 
-        head_predicate_idx = 2
+        head_predicate_idx = 3
         self.model_parameter[head_predicate_idx] = {}
         self.model_parameter[head_predicate_idx]['base'] = 0.3
 
@@ -76,47 +74,47 @@ class Logic_Model_Generator:
         logic_template = {}
 
         '''
-        Mental predicate: [0]
-        '''
-
-        head_predicate_idx = 0
-        logic_template[head_predicate_idx] = {}
-
-        # NOTE: rule content: 1 and before(1, 0) to 0
-        formula_idx = 0
-        logic_template[head_predicate_idx][formula_idx] = {}
-        logic_template[head_predicate_idx][formula_idx]['body_predicate_idx'] = [1]
-        logic_template[head_predicate_idx][formula_idx]['body_predicate_sign'] = [1]  # use 1 to indicate True; use 0 to indicate False
-        logic_template[head_predicate_idx][formula_idx]['head_predicate_sign'] = [1]
-        logic_template[head_predicate_idx][formula_idx]['temporal_relation_idx'] = [[1, 0]]
-        logic_template[head_predicate_idx][formula_idx]['temporal_relation_type'] = [self.BEFORE]
-
-        '''
-        Action predicates: [1, 2]
+        Mental predicate: [1]
         '''
 
         head_predicate_idx = 1
         logic_template[head_predicate_idx] = {}
 
-        # NOTE: rule content: 2 and before(2,1) to 1
+        # NOTE: rule content: 2 and before(2, 1) to 1
         formula_idx = 0
         logic_template[head_predicate_idx][formula_idx] = {}
         logic_template[head_predicate_idx][formula_idx]['body_predicate_idx'] = [2]
-        logic_template[head_predicate_idx][formula_idx]['body_predicate_sign'] = [1]
+        logic_template[head_predicate_idx][formula_idx]['body_predicate_sign'] = [1]  # use 1 to indicate True; use 0 to indicate False
         logic_template[head_predicate_idx][formula_idx]['head_predicate_sign'] = [1]
         logic_template[head_predicate_idx][formula_idx]['temporal_relation_idx'] = [[2, 1]]
         logic_template[head_predicate_idx][formula_idx]['temporal_relation_type'] = [self.BEFORE]
 
+        '''
+        Action predicates: [2, 3]
+        '''
+
         head_predicate_idx = 2
         logic_template[head_predicate_idx] = {}
 
-        # NOTE: rule content: 0 and before(0,2) to 2
+        # NOTE: rule content: 3 and before(3,2) to 2
         formula_idx = 0
         logic_template[head_predicate_idx][formula_idx] = {}
-        logic_template[head_predicate_idx][formula_idx]['body_predicate_idx'] = [0]
+        logic_template[head_predicate_idx][formula_idx]['body_predicate_idx'] = [3]
         logic_template[head_predicate_idx][formula_idx]['body_predicate_sign'] = [1]
         logic_template[head_predicate_idx][formula_idx]['head_predicate_sign'] = [1]
-        logic_template[head_predicate_idx][formula_idx]['temporal_relation_idx'] = [[0, 2]]
+        logic_template[head_predicate_idx][formula_idx]['temporal_relation_idx'] = [[3, 2]]
+        logic_template[head_predicate_idx][formula_idx]['temporal_relation_type'] = [self.BEFORE]
+
+        head_predicate_idx = 3
+        logic_template[head_predicate_idx] = {}
+
+        # NOTE: rule content: 1 and before(1,3) to 3
+        formula_idx = 0
+        logic_template[head_predicate_idx][formula_idx] = {}
+        logic_template[head_predicate_idx][formula_idx]['body_predicate_idx'] = [1]
+        logic_template[head_predicate_idx][formula_idx]['body_predicate_sign'] = [1]
+        logic_template[head_predicate_idx][formula_idx]['head_predicate_sign'] = [1]
+        logic_template[head_predicate_idx][formula_idx]['temporal_relation_idx'] = [[1, 3]]
         logic_template[head_predicate_idx][formula_idx]['temporal_relation_type'] = [self.BEFORE]
 
         return logic_template
@@ -125,15 +123,9 @@ class Logic_Model_Generator:
         feature_formula = []
         weight_formula = []
         effect_formula = []
-        # print("head is : ", head_predicate_idx)
         for formula_idx in list(self.logic_template[head_predicate_idx].keys()):
-            # range all the formula for the chosen head_predicate
             cur_weight = self.model_parameter[head_predicate_idx][formula_idx]['weight_para'][0]
             weight_formula.append(cur_weight)
-            # print("---->> cur formula idx: ", formula_idx)
-            # print("---->> cur feature is: ", self.get_feature(cur_time=cur_time, head_predicate_idx=head_predicate_idx,
-            #                                         history=history,
-            #                                         template=self.logic_template[head_predicate_idx][formula_idx]))
             feature_formula.append(self.get_feature(cur_time=cur_time, head_predicate_idx=head_predicate_idx,
                                                     history=history,
                                                     template=self.logic_template[head_predicate_idx][formula_idx]))
@@ -141,8 +133,6 @@ class Logic_Model_Generator:
 
         intensity = np.array(weight_formula) * np.array(feature_formula) * np.array(effect_formula)
         intensity = self.model_parameter[head_predicate_idx]['base'] + np.sum(intensity)
-        # print("INTENSITY before transform: ")
-        # print(intensity)
         if intensity >= 0:
             intensity = np.max([intensity, self.model_parameter[head_predicate_idx]['base']])
         else:
@@ -155,7 +145,7 @@ class Logic_Model_Generator:
         occur_time_dic = {}
         feature = 0
         for idx, body_predicate_idx in enumerate(template['body_predicate_idx']):
-            occur_time = np.array(history[body_predicate_idx]['time'][1:])
+            occur_time = np.array(history[body_predicate_idx]['time'])
             mask = (occur_time <= cur_time)  # find corresponding history
             # mask: filter all the history time points that satisfies the conditions which will boost the head predicate
             occur_time_dic[body_predicate_idx] = occur_time[mask]
@@ -204,7 +194,7 @@ class Logic_Model_Generator:
         for sample_ID in np.arange(0, num_sample, 1):
             data[sample_ID] = {}  # each data[sample_ID] stores one realization of the point process
             # initialize data
-            for predicate_idx in np.arange(0, self.num_predicate, 1):
+            for predicate_idx in self.head_predicate_set:
                 data[sample_ID][predicate_idx] = {}
                 data[sample_ID][predicate_idx]['time'] = []
             t = 0  # cur_time
@@ -228,7 +218,7 @@ class Logic_Model_Generator:
                         [self.intensity(t, head_idx, data[sample_ID]) for head_idx in self.head_predicate_set])
                                                          / np.sum(np.array(
                         [self.intensity(t, head_idx, data[sample_ID]) for head_idx in self.head_predicate_set])))
-                    idx = np.argmax(tmp)
+                    idx = np.argmax(tmp) + 1
                     if t < time_horizon and time_to_event > self.sep_for_grids:
                         data[sample_ID][idx]['time'].append(t)
                 else:
