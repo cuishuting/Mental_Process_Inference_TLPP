@@ -1,5 +1,5 @@
 import torch.nn as nn
-from torch.nn.functional import softmax
+from torch.nn.functional import softmax, gumbel_softmax
 
 
 class EncoderDecoder(nn.Module):
@@ -26,15 +26,18 @@ class EncoderDecoder(nn.Module):
 class Generator(nn.Module):
     """Define standard linear + logsoftmax generation step for each grid's hazard func."""
 
-    def __init__(self, d_model, num_mental_types):
+    def __init__(self, d_model, num_mental_types, temperature):
         super(Generator, self).__init__()
         self.proj = nn.Linear(d_model, num_mental_types)
+        self.tau = temperature
 
     def forward(self, x):
         # todo: an important advantage about using log_softmax in addition to numerical stability: this activation
         #  function heavily penalizes wrong class prediction as compared to its Softmax counterpart
         # return log_softmax(self.proj(x), dim=-1)
-        return softmax(self.proj(x), dim=-1)  # consider output[0] as hz of mental 0
+        logits = softmax(self.proj(x), dim=-1)  # consider output[0] as hz of mental 0
+        mental_samples = gumbel_softmax(logits, tau=self.tau, hard=True)
+        return mental_samples
 
 
 
