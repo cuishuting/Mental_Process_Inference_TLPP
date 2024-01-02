@@ -9,7 +9,7 @@ class Embeddings(nn.Module):
     """To get action or mental predicates' summation of type and time embedding"""
     def __init__(self, d_model, num_types):
         super(Embeddings, self).__init__()
-        self.type_emb = nn.Embedding(num_types, d_model)
+        self.type_emb = nn.Embedding(num_types, d_model, padding_idx=0)
         self.d_model = d_model
 
     def get_time_emb(self, time_tensor):

@@ -1,5 +1,5 @@
-from Utils import MultiHeadedAttention, PositionwiseFeedForward, Get_q_all_grids, subsequent_mask, neg_log_likelihood, get_m_occur_grids_list
-from Transformer import EncoderDecoder, Generator
+from Utils import MultiHeadedAttention, PositionwiseFeedForward, Get_q_all_grids, subsequent_mask, neg_log_likelihood, get_m_occur_grids_list, get_sampled_m_time_type_batch
+from VAE import EncoderDecoder, Generator, MentalSampler, DecoderForVAE
 from Encoder import Encoder, EncoderLayer
 from Decoder import Decoder, DecoderLayer
 from Embedding import Embeddings
@@ -20,9 +20,11 @@ def make_model(param, action_type_list, mental_type_list):
     ff = PositionwiseFeedForward(d_model=param.d_emb, d_ff=param.d_hid, dropout=param.dropout)
     model = EncoderDecoder(Encoder(EncoderLayer(param.d_emb, dc(attn), dc(ff), dropout=param.dropout), N=param.num_sublayer),
                            Decoder(DecoderLayer(param.d_emb, dc(attn), dc(attn), dc(ff), dropout=param.dropout), N=param.num_sublayer),
-                           Embeddings(param.d_emb, len(action_type_list)),
-                           Embeddings(param.d_emb, len(mental_type_list)+1),
-                           Generator(param.d_emb, len(mental_type_list)+1))
+                           Embeddings(param.d_emb, len(action_type_list)+1),  # "+1": including padding_type, 0
+                           Embeddings(param.d_emb, len(mental_type_list)+1),  # "+1": including padding_type, 0
+                           Generator(param.d_emb, len(mental_type_list)+1),
+                           MentalSampler(param.tau_tmp),
+                           DecoderForVAE(param.d_emb, param.d_hid, param.dropout, action_type_list))
     """Initialize parameters with Glorot / fan_avg."""
     for p in model.parameters():
         if p.dim() > 1:
@@ -39,7 +41,7 @@ def model_pred_hz(model, pad_a_time_batch, pad_a_type_batch, param, num_grids, m
     src = (pad_a_time_batch, pad_a_type_batch, q_input)
     memory = model.encode(src, src_mask)  # [batch_size, num_grids, param.d_emb]
     history_grids_time = torch.zeros((param.batch_size, 1)).to(param.device)  # initialize begin token's time
-    begin_token = torch.ones((param.batch_size, 1)).type_as(src[1]).to(param.device)  # 1 represent none mental occurs currently
+    begin_token = torch.ones((param.batch_size, 1)).type_as(src[1]).to(param.device)  # todo: 1 represent none mental occurs currently
     history_grids_type = begin_token
     pred_hz = torch.zeros((param.batch_size, num_grids, len(mental_type_list) + 1)).requires_grad_(True).to(param.device)
     # todo: currently we only have one mental type, we use 0 to represent the only real mental type
@@ -66,6 +68,15 @@ def train_epoch(train_dataloader, model, param, num_grids, mental_type_list, opt
         pad_a_time_batch = pad_a_time_batch.to(param.device)
         pad_a_type_batch = pad_a_type_batch.to(param.device)
         pred_hz = model_pred_hz(model, pad_a_time_batch, pad_a_type_batch, param, num_grids, mental_type_list)
+        sampled_m = model.mental_sampler(pred_hz)  # shape: [nbatch, num_grids, num_m_types], last dim is one-hot vector
+        history_a = (pad_a_time_batch, pad_a_type_batch)
+        history_m = get_sampled_m_time_type_batch(sampled_m, param.sep_for_grids)
+        pred_next_a_types_prob, pred_lambda_time2next_a = model.get_next_a_type_lamb(history_a, history_m)
+        if idx == 0:
+            print("pred_next_a_types_prob:")
+            print(pred_next_a_types_prob)
+            print("pred_lambda_time2next_a")
+            print(pred_lambda_time2next_a)
         m_occur_grids_list_curb, _ = get_m_occur_grids_list(pad_m_time_batch, param.time_horizon, param.sep_for_grids,
                                                          param.batch_size)
         """loss computation & model optim"""
@@ -128,11 +139,12 @@ parser.add_argument('-batch_size', type=int)
 parser.add_argument('-lr', type=float)
 parser.add_argument('-lr_scheduler_step', type=int)
 parser.add_argument('-num_iter', type=int)
+parser.add_argument('-tau_tmp', type=int)
 param = parser.parse_args()
 
 param.device = torch.device('cuda')
-action_type_list = list(map(int, param.action_type_list[0]))  # cur: [1, 2]
-mental_type_list = list(map(int, param.mental_type_list[0]))  # cur: [0]
+action_type_list = list(map(int, param.action_type_list[0]))  # cur: [2, 3]
+mental_type_list = list(map(int, param.mental_type_list[0]))  # cur: [1]
 num_grids = int(param.time_horizon / param.sep_for_grids)
 
 
@@ -172,8 +184,8 @@ for epoch in range(param.num_iter):
     train_epoch(train_dataloader, model, param, num_grids, mental_type_list, optimizer)
     scheduler.step()
 
-print("begin of testing")
-eval_epoch(model, test_dataloader, param, num_grids, mental_type_list)
+# print("begin of testing")
+# eval_epoch(model, test_dataloader, param, num_grids, mental_type_list)
 
 print("The End!")
 

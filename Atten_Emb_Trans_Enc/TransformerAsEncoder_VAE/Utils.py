@@ -147,3 +147,32 @@ def neg_log_likelihood(batch_size, pred_hz, target_m):
                 log_likelihood = log_likelihood + torch.log(1 - pred_hz_m0_curb[g_id])
     final_neg_log_likelihood = -1 * log_likelihood / batch_size
     return final_neg_log_likelihood
+
+
+def get_sampled_m_time_type_batch(sampled_m, sep_for_grids):
+    """
+    sampled_m: [nbatch, num_grids, num_m_types], last dim is one-hot vector, from Gumbel-softmax
+    get input for nn.Embedding() to get embeddings of sampled mental events from vae_encoder
+    """
+    cur_grids_num = sampled_m.shape[1]
+    batch_size = sampled_m.shape[0]
+    m_time_batch = torch.tensor([(g_id + 0.5) * sep_for_grids for g_id in range(cur_grids_num)]).unsqueeze(0).repeat(batch_size, 1).to('cuda')  # shape: [nbatch, cur_grids_num]
+    # todo: below(torch.argmax) may trigger grad can not backpropogate when optim
+    m_type_batch = torch.argmax(sampled_m, dim=-1).to('cuda')   # shape: [nbatch, cur_grids_num], 0 is for mental occurrence, 1 is for none mental
+    masked_m_time = m_time_batch * m_type_batch.eq(0)
+    occur_m_time = dict()
+
+    for i in range(batch_size):
+        cur_b_mask = masked_m_time[i].eq(0)
+        occur_m_time[i] = torch.masked_select(masked_m_time[i], ~cur_b_mask).to('cuda')
+    cur_b_max_m_len = max([len(occur_m_time[i]) for i in range(batch_size)])
+    history_m_time_batch = torch.zeros((batch_size, cur_b_max_m_len)).to('cuda')
+    history_m_type_batch = torch.zeros((batch_size, cur_b_max_m_len)).to('cuda')
+    for i in range(batch_size):
+        history_m_time_batch[i] = torch.cat([occur_m_time[i], torch.tensor([0] * (cur_b_max_m_len-len(occur_m_time[i]))).to('cuda')], dim=-1)
+        history_m_type_batch[i][len(occur_m_time[i]):] = 1  # todo: 0 is the only real mental type, 1 is none mental type
+
+    return history_m_time_batch, history_m_type_batch
+
+
+# def rec_a_log_likelihood()
