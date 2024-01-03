@@ -5,6 +5,53 @@ import math
 import numpy as np
 
 
+def logic_rule():
+    logic_template = {}
+    '''
+    Mental predicate: [1]
+    '''
+    head_predicate_idx = 1
+    logic_template[head_predicate_idx] = {}
+
+    # NOTE: rule content: 2 and before(2, 1) to 1
+    formula_idx = 0
+    logic_template[head_predicate_idx][formula_idx] = {}
+    logic_template[head_predicate_idx][formula_idx]['body_predicate_idx'] = [2]
+    logic_template[head_predicate_idx][formula_idx]['body_predicate_sign'] = [1]  # use 1 to indicate True; use 0 to indicate False
+    logic_template[head_predicate_idx][formula_idx]['head_predicate_sign'] = [1]
+    logic_template[head_predicate_idx][formula_idx]['temporal_relation_idx'] = [[2, 1]]
+    logic_template[head_predicate_idx][formula_idx]['temporal_relation_type'] = ['BEFORE']
+
+    '''
+    Action predicates: [2, 3]
+    '''
+    head_predicate_idx = 2
+    logic_template[head_predicate_idx] = {}
+
+    # NOTE: rule content: 3 and before(3,2) to 2
+    formula_idx = 0
+    logic_template[head_predicate_idx][formula_idx] = {}
+    logic_template[head_predicate_idx][formula_idx]['body_predicate_idx'] = [3]
+    logic_template[head_predicate_idx][formula_idx]['body_predicate_sign'] = [1]
+    logic_template[head_predicate_idx][formula_idx]['head_predicate_sign'] = [1]
+    logic_template[head_predicate_idx][formula_idx]['temporal_relation_idx'] = [[3, 2]]
+    logic_template[head_predicate_idx][formula_idx]['temporal_relation_type'] = ['BEFORE']
+
+    head_predicate_idx = 3
+    logic_template[head_predicate_idx] = {}
+
+    # NOTE: rule content: 1 and before(1,3) to 3
+    formula_idx = 0
+    logic_template[head_predicate_idx][formula_idx] = {}
+    logic_template[head_predicate_idx][formula_idx]['body_predicate_idx'] = [1]
+    logic_template[head_predicate_idx][formula_idx]['body_predicate_sign'] = [1]
+    logic_template[head_predicate_idx][formula_idx]['head_predicate_sign'] = [1]
+    logic_template[head_predicate_idx][formula_idx]['temporal_relation_idx'] = [[1, 3]]
+    logic_template[head_predicate_idx][formula_idx]['temporal_relation_type'] = ['BEFORE']
+
+    return logic_template
+
+
 def clones(module, N):
     """Produce N identical layers."""""
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
@@ -152,14 +199,14 @@ def neg_log_likelihood(batch_size, pred_hz, target_m):
 def get_sampled_m_time_type_batch(sampled_m, sep_for_grids):
     """
     sampled_m: [nbatch, num_grids, num_m_types], last dim is one-hot vector, from Gumbel-softmax
-    get input for nn.Embedding() to get embeddings of sampled mental events from vae_encoder
     """
     cur_grids_num = sampled_m.shape[1]
     batch_size = sampled_m.shape[0]
     m_time_batch = torch.tensor([(g_id + 0.5) * sep_for_grids for g_id in range(cur_grids_num)]).unsqueeze(0).repeat(batch_size, 1).to('cuda')  # shape: [nbatch, cur_grids_num]
-    # todo: below(torch.argmax) may trigger grad can not backpropogate when optim
-    m_type_batch = torch.argmax(sampled_m, dim=-1).to('cuda')   # shape: [nbatch, cur_grids_num], 0 is for mental occurrence, 1 is for none mental
-    masked_m_time = m_time_batch * m_type_batch.eq(0)
+    m_type_batch = torch.argmax(sampled_m, dim=-1).to('cuda')
+    # m_type_batch shape: [nbatch, cur_grids_num], 0 is for mental occurrence, 1 is for none mental
+    masked_m_time = m_time_batch * m_type_batch.eq(0)  # shape: [nbatch, cur_grids_num]
+    # masked_m_time: only keep time stamps where certain m sampled in crsp grid, with all other grids valued 0
     occur_m_time = dict()
 
     for i in range(batch_size):
@@ -175,4 +222,15 @@ def get_sampled_m_time_type_batch(sampled_m, sep_for_grids):
     return history_m_time_batch, history_m_type_batch
 
 
-# def rec_a_log_likelihood()
+def rec_a_log_likelihood(pred_next_a_types_probs, pred_lambda_time2next_a, real_next_a_type, real_time2next_a, delta_time2next, loss_pred_a_type):
+    """
+    Get log_likelihood on one accepted pred_next_a
+    pred_next_a_types_probs: [batch_size, num_action_types]
+    pred_lambda_time2next_a: [batch_size, 1] -> conditional intensity func, lambda
+    real_next_a_type: [batch_size]
+    real_time2next_a: [batch_size]
+    """
+    loss_a_type_mean = loss_pred_a_type(input=pred_next_a_types_probs, target=real_next_a_type-1)
+    loss_a_time2next_mean = torch.sum(torch.log(1 - torch.exp(-1*pred_lambda_time2next_a.reshape(-1)*delta_time2next))
+                                      - pred_lambda_time2next_a.reshape(-1)*real_time2next_a) / len(real_time2next_a)
+    return loss_a_type_mean + loss_a_time2next_mean
